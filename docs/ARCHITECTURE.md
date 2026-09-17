@@ -219,7 +219,7 @@ A Gantt bar needs a start and an end. GitHub issues have **no native start/due f
 **Start date:**
 1. `issueFieldValues` — a `IssueFieldDateValue` whose `field.name` matches the configured start-field name (default `"Start date"`, case-insensitive)
 2. Body text — a line beginning `GanttStart:` followed by an ISO 8601 date
-3. `milestone.dueOn` minus the configured default duration — *only if* a due date was found and no start was
+3. **The resolved due date** minus the configured default duration — *only if* a due date was found and no start was. (§5.3 originally named `milestone.dueOn` here specifically. Phase 2 widened it to whichever due date won, because the narrow rule mangles a real case: an issue with an explicit due date, no start, and a later milestone took its start from the milestone, landed *after* its own due date, and had that explicit due date overwritten by the due-before-start clamp. When the milestone is the only due source the two rules agree.)
 4. `createdAt` — guaranteed to exist, so a start date is always produced
 
 **Due date:**
@@ -234,6 +234,7 @@ Notes for the implementer:
 - The `GanttStart:`/`GanttDue:` body convention is inherited from GanttLab so existing users' issues keep working. The prefixes are configurable.
 - `IssueFieldDateValue.value` is a **String**. Parse it and reject invalid dates — never let `Invalid Date` reach the chart.
 - If due < start after resolution, clamp due to start + `defaultTaskDays` and record a warning on the task. Do not throw.
+- **Format dates in local time, not with `toISOString()`.** A date-only string like `2026-04-20` parses to local midnight, so `toISOString().slice(0,10)` reports the previous day anywhere east of UTC. Use `date-fns`' `format(date, 'yyyy-MM-dd')` everywhere a date becomes a string, including the strings handed to `frappe-gantt`.
 
 ### 5.4 Dependencies
 
