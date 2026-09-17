@@ -172,3 +172,47 @@ describe('board store', () => {
     expect(source.calls).toHaveLength(1)
   })
 })
+
+describe('board store at board scale', () => {
+  it('pages a 250-issue chain in and heals every edge across page boundaries', async () => {
+    const pageSize = 50
+    const all = Array.from({ length: 250 }, (_, index) =>
+      task(`n${index}`, index === 0 ? [] : [`n${index - 1}`]),
+    )
+    const pages = Array.from({ length: 5 }, (_, page) =>
+      pageOf(
+        all.slice(page * pageSize, (page + 1) * pageSize),
+        page === 4 ? null : String(page + 1),
+        all.length,
+      ),
+    )
+
+    const board = useBoardStore()
+    board.useSource(new FakeSource(pages))
+
+    await board.loadRepo('acme', 'big')
+    while (board.hasNextPage) await board.loadMore()
+
+    expect(board.tasks).toHaveLength(250)
+    // Every edge but the first task's resolves once the whole chain is loaded.
+    expect(board.graph.tasks.flatMap((t) => t.dependsOn)).toHaveLength(249)
+    expect(board.graph.droppedEdges).toBe(0)
+    expect(board.graph.brokenCycles).toBe(0)
+  })
+
+  it('breaks a cycle spanning two pages without hanging', async () => {
+    const board = useBoardStore()
+    board.useSource(
+      new FakeSource([
+        pageOf([task('a', ['d'])], '1', 4),
+        pageOf([task('d', ['a'])], null, 4),
+      ]),
+    )
+
+    await board.loadRepo('acme', 'big')
+    await board.loadMore()
+
+    expect(board.graph.brokenCycles).toBe(1)
+    expect(board.graph.tasks.flatMap((t) => t.dependsOn)).toHaveLength(1)
+  })
+})
