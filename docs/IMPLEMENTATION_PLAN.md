@@ -44,7 +44,39 @@ cd ~/Development/gh-gantt && npm create vite@latest . -- --template vue-ts
 npm install && npm install pinia date-fns frappe-gantt && npm install -D tailwindcss @tailwindcss/vite vitest @vitest/coverage-v8 eslint vue-tsc
 ```
 
-3. Configure Tailwind v4. **v4 uses CSS-first config — do not create `tailwind.config.js`.** Add the `@tailwindcss/vite` plugin to `vite.config.ts`, and put `@import "tailwindcss";` at the top of `src/style.css`.
+3. Configure Tailwind v4. **v4 uses CSS-first config — do not create `tailwind.config.js`; it will be ignored.** Two edits only:
+
+`src/style.css` — first line:
+```css
+@import "tailwindcss";
+```
+
+`vite.config.ts`:
+```ts
+import { defineConfig } from 'vite'
+import vue from '@vitejs/plugin-vue'
+import tailwindcss from '@tailwindcss/vite'
+
+export default defineConfig({
+  plugins: [vue(), tailwindcss()],
+})
+```
+
+3b. **Importing the `.graphql` file.** Vite does not handle `.graphql` natively. Do **not** add a GraphQL plugin. Import it as a raw string with Vite's `?raw` suffix:
+
+```ts
+import boardIssuesQuery from './queries/boardIssues.graphql?raw'
+```
+
+Add this to `src/vite-env.d.ts` so TypeScript accepts it:
+```ts
+declare module '*.graphql?raw' {
+  const src: string
+  export default src
+}
+```
+
+3c. **Node version.** Use Node 22 LTS or newer (Vite 8 requires a modern Node). Record it in `.nvmrc` and in `engines` in `package.json`.
 
 4. Create the directory skeleton with a `.gitkeep` in each:
 
@@ -52,10 +84,34 @@ npm install && npm install pinia date-fns frappe-gantt && npm install -D tailwin
 cd ~/Development/gh-gantt && mkdir -p src/{domain,ports,adapters/github/queries,adapters/storage,app/stores,ui/views,ui/components} test/fixtures && find src test -type d -empty -exec touch {}/.gitkeep \;
 ```
 
-5. Add the **dependency-rule lint**. This is what keeps the layering honest; without it the boundaries rot within a week. Configure `eslint` with `no-restricted-imports` so that:
-   - files in `src/domain/**` may not import from `adapters`, `app`, `ui`, or `vue`
-   - files in `src/ui/**` may not import from `adapters`
-   - files outside `src/adapters/github/**` may not import `adapters/github/types`
+5. Add the **dependency-rule lint**. This is what keeps the layering honest; without it the boundaries rot within a week. ESLint 9 uses **flat config** — create `eslint.config.js` (not `.eslintrc`):
+
+```js
+import js from '@eslint/js'
+
+const restrict = (patterns) => ({
+  rules: { 'no-restricted-imports': ['error', { patterns }] },
+})
+
+export default [
+  js.configs.recommended,
+  {
+    files: ['src/domain/**/*.ts'],
+    ...restrict(['**/adapters/**', '**/app/**', '**/ui/**', 'vue', 'pinia']),
+  },
+  {
+    files: ['src/ui/**/*.{ts,vue}'],
+    ...restrict(['**/adapters/**']),
+  },
+  {
+    files: ['src/**/*.{ts,vue}'],
+    ignores: ['src/adapters/github/**'],
+    ...restrict(['**/adapters/github/types*']),
+  },
+]
+```
+
+Verify the rule actually bites before moving on: temporarily add `import { GitHubClient } from '../adapters/github/GitHubClient'` to a file in `src/domain/`, confirm `npm run lint` **fails**, then remove it.
 
 6. Add scripts to `package.json`:
 
@@ -325,7 +381,13 @@ export interface IssueSource {
 - Manual: load `frappe/gantt` → the table shows rows with plausible dates and `totalCount` matches the issue count on github.com.
 - Manual: load a repo with no issues → an empty state, no crash.
 - Manual: load a non-existent repo → a readable error, no crash.
-- Unit test: `mapIssue` against a **captured real fixture** in `test/fixtures/` produces the expected `Task`. Scrub tokens from the fixture.
+- Unit test: `mapIssue` against a **captured real fixture** in `test/fixtures/` produces the expected `Task`. Capture it with the authenticated GitHub CLI (no token ends up in the file):
+
+```bash
+gh api graphql -F query=@src/adapters/github/queries/boardIssues.graphql -F owner=frappe -F repo=gantt -F first=5 > test/fixtures/boardIssues.json
+```
+
+  Check the file for any token-like string before committing it.
 - Unit test: a node with `issueFieldValues.nodes: []` still maps to a task with valid dates.
 
 ### Commit
@@ -340,18 +402,56 @@ export interface IssueSource {
 
 ### Files
 
+**`src/types/frappe-gantt.d.ts`** — the library ships **no types**. Write them locally:
+
+```ts
+declare module 'frappe-gantt' {
+  export interface FrappeTask {
+    id: string
+    name: string
+    start: string
+    end: string
+    progress: number
+    dependencies: string[]
+    custom_class?: string
+  }
+  export interface FrappeOptions {
+    view_mode?: 'Hour' | 'Quarter Day' | 'Half Day' | 'Day' | 'Week' | 'Month' | 'Year'
+    readonly?: boolean
+    bar_height?: number
+    column_width?: number
+    arrow_curve?: number
+    infinite_padding?: boolean
+    on_click?: (task: FrappeTask) => void
+  }
+  export default class Gantt {
+    constructor(wrapper: string | HTMLElement | SVGElement, tasks: FrappeTask[], options?: FrappeOptions)
+    refresh(tasks: FrappeTask[]): void
+    change_view_mode(mode: string): void
+    clear(): void
+  }
+}
+```
+
+**Do NOT run `npm install @types/frappe-gantt`.** That package is at 0.9.0 against a 1.2.2 library — it describes an older API, will typecheck cleanly, and will be wrong at runtime.
+
 **`src/ui/components/GanttChart.vue`**
 
-- Props: `tasks: Task[]`, `viewMode: string`.
-- Read `frappe-gantt`'s **current README before writing this component** — confirm its constructor signature, the expected task object shape, and its CSS import path. Do not write this from memory; the API has changed across versions.
-- Hold the instance in **`shallowRef`, never `ref`.** Deep reactivity over a library instance that mutates its own internals causes severe performance problems and hard-to-trace bugs.
-- Map domain `Task` → frappe's shape. Use the domain `id` directly as frappe's task id — it must be **stable and unique**.
-- Re-render on `tasks` change (`watch` with the mapped array).
-- Clean up in `onBeforeUnmount`.
-- Handle the empty-array case **before** constructing the chart; frappe does not handle zero tasks gracefully.
-- Clicking a bar opens `task.url` in a new tab (`target="_blank"`, `rel="noopener noreferrer"`).
+Props: `tasks: Task[]`, `viewMode: string`. The API below is verified against the source of `frappe-gantt@1.2.2` — **use it as written and do not consult blog posts or the package README for these calls.**
 
-Add a view-mode switcher (Day / Week / Month) backed by `settings.ts`.
+- Construct with `new Gantt(el, frappeTasks, { view_mode, readonly: true, on_click })`. Options are **snake_case**.
+- Import CSS: `import 'frappe-gantt/dist/frappe-gantt.css'`.
+- **Map domain → frappe field names.** They differ: `title` → **`name`**, `due` → **`end`**, `dependsOn` → `dependencies`. Dates go in as `YYYY-MM-DD` strings.
+- **Build fresh plain objects for every render.** The library **mutates what you pass it** — it writes `_start`, `_end`, `_index`, overwrites `dependencies`, and rewrites `id`. Handing it store objects or Vue reactive proxies will corrupt state. Never pass `props.tasks` or anything derived from it by reference.
+- Hold the instance in **`shallowRef`, not `ref`**.
+- **To update, call `gantt.refresh(newTasks)`** (instance method). The package README shows `gantt.tasks.refresh()` — **that is wrong and the chart will silently never update.**
+- Guard the **empty array before constructing**; frappe does not handle zero tasks gracefully.
+- `onBeforeUnmount`: call `clear()` and drop the ref.
+- `on_click` opens `task.url` via the domain task looked up by id — `window.open(url, '_blank', 'noopener,noreferrer')`.
+
+**Silent-failure warning:** frappe `console.error`s and then **silently drops** any task with a missing `end`, `start` after `end`, or a span over ten years. Bars vanish with no exception. If bars are missing, check the console first.
+
+Add a view-mode switcher backed by `settings.ts`. Valid values are exactly: `'Hour'`, `'Quarter Day'`, `'Half Day'`, `'Day'`, `'Week'`, `'Month'`, `'Year'`. Expose Day / Week / Month.
 
 ### Acceptance criteria
 
@@ -361,6 +461,7 @@ Add a view-mode switcher (Day / Week / Month) backed by `settings.ts`.
 - Manual: loading repo A then repo B fully replaces the chart, with no leftover bars from A.
 - Manual: a repo with zero issues shows an empty state rather than a broken chart.
 - Manual: no console errors or Vue warnings during any of the above.
+- **Mutation check:** after the chart renders, confirm in the console that the board store's tasks still have their original shape and no `_start` / `_end` / `_index` properties. Their presence means objects were passed by reference — fix the mapping to build fresh copies.
 
 ### Commit
 
@@ -374,7 +475,7 @@ Add a view-mode switcher (Day / Week / Month) backed by `settings.ts`.
 
 ### Steps
 
-1. Pass `dependsOn` through to frappe's dependency field, in whatever format the current version expects (check the README — it has historically accepted both a comma-separated string and an array).
+1. Pass `dependsOn` as frappe's `dependencies`, **as a `string[]`**. (The library also accepts a comma-separated string and normalises it, but an array avoids any escaping question.)
 2. **Before passing anything to the chart**, run `pruneDanglingEdges` then `detectAndBreakCycles`. Never hand the library an id that is not present in the same task array.
 3. Surface dropped edges and broken cycles in the UI as a dismissible, non-blocking notice ("3 dependencies point to issues outside this view").
 4. Add a per-task warning indicator for tasks whose `warnings` array is non-empty, with the messages in a tooltip.

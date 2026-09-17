@@ -18,6 +18,7 @@ A **static, browser-only single-page application** that reads issues from GitHub
 | Direction | **Read-only** | The app never writes to GitHub. No mutations, no write token scopes, no optimistic UI, no conflict handling. |
 | Hosting | **Static files, no backend** | No server to hold secrets. This constrains authentication (see §6). |
 | Deployment | Any static host (GitHub Pages, Netlify, Vercel static) | Build output is plain `index.html` + assets. |
+| Browser target | **Chrome / Chromium only, for now** | Other browsers are expected later, so do not build foundations on Chromium-only APIs. See §6. |
 
 ### Explicit non-goals
 
@@ -286,11 +287,14 @@ Support for `prf` varies by browser *and* by authenticator (fewer authenticators
 - Link to GitHub's fine-grained token page, state the minimal scopes, recommend an expiry of 90 days or less.
 - Provide a visible "disconnect" that clears memory, `sessionStorage`, and IndexedDB.
 
-### Rejected: the Credential Management API
+### The Credential Management API, under a Chrome-only target
 
-`navigator.credentials` with `PasswordCredential` looks like the purpose-built answer and is not. MDN classifies it **"Not Baseline — Limited Availability"**, noting it "does not work in some of the most widely-used browsers" — it remains effectively Chromium-only and is still marked experimental.
+`navigator.credentials` with `PasswordCredential` is **Chromium-only** — MDN classifies it "Not Baseline — Limited Availability" and still marks it experimental. Targeting Chrome removes the portability objection, but it does **not** promote this to the foundation, for two reasons:
 
-Do not build the storage path on it. It may be added later as pure progressive enhancement behind a feature check, but it can never be the only route to a stored token.
+1. The stated plan is to expand to other browsers later. Anything built on a Chromium-only API has to be torn out at that point.
+2. It is still experimental, with no other engine shipping it. Chrome could deprecate it.
+
+**Rule:** Tier 1 form markup is the primary mechanism and must work on its own. `PasswordCredential` may be added as *pure progressive enhancement* behind a feature check — its real benefit is `navigator.credentials.get()` for silent re-auth on return visits — but the app must be fully usable with it absent.
 
 ### Error handling
 
@@ -314,17 +318,57 @@ Do not attempt to emulate page numbers on top of cursors.
 
 ## 8. Rendering
 
-`frappe-gantt` is a vanilla JS library that renders into a DOM element. Wrap it in a single Vue component, `ui/components/GanttChart.vue`.
+`frappe-gantt` is vanilla JS rendering into a DOM element, wrapped in one Vue component: `ui/components/GanttChart.vue`.
 
-Rules for that wrapper:
+### Verified API facts
 
-- It receives domain `Task[]` as a prop and maps them to frappe's shape inside the component.
-- It owns the frappe instance in a `shallowRef` — **not** `ref`. Deep reactivity over a library instance that mutates its own internals causes performance collapse and subtle bugs.
-- It must call the library's cleanup on `onBeforeUnmount` and re-render on prop change.
-- Every task handed to frappe needs a **stable, unique `id`**. Use the GitHub node `id`. This is the field GanttLab's chart layer discarded, which is precisely why it could never draw dependencies.
-- Dependencies are passed as the ids of prerequisite tasks. Validate that every referenced id exists in the same array first (see §5.4).
+Everything below was read from the **source of `frappe-gantt@1.2.2`**, not from memory or blog posts. Trust this section over anything found online.
 
----
+**Constructor:** `new Gantt(wrapper, tasks, options)` — `wrapper` may be a CSS selector string, an `HTMLElement`, or an `SVGElement`.
+
+**Task object shape** (note the field names differ from our domain type):
+
+```js
+{ id: '1', name: 'Redesign website', start: '2016-12-28', end: '2016-12-31', progress: 20, dependencies: [] }
+```
+
+| Domain `Task` | frappe field |
+|---|---|
+| `id` | `id` |
+| `title` | **`name`** |
+| `start` | `start` |
+| `due` | **`end`** |
+| `dependsOn` | `dependencies` |
+
+**Options are `snake_case`**: `view_mode`, `bar_height`, `column_width`, `arrow_curve`, `container_height`, `infinite_padding`, `readonly`.
+
+**Valid `view_mode` strings** (exact): `'Hour'`, `'Quarter Day'`, `'Half Day'`, `'Day'`, `'Week'`, `'Month'`, `'Year'`.
+
+**`dependencies` accepts an array or a comma-separated string.** Source normalises strings to arrays. **Pass an array.**
+
+### Four traps, all confirmed in source
+
+1. **The library mutates the task objects you pass it.** It assigns `task._start`, `task._end`, `task._index`, overwrites `task.dependencies`, and rewrites `task.id`. Passing domain objects or Vue reactive proxies directly **will corrupt store state**. Always pass freshly built plain objects — deep copies, not references into the store.
+2. **The README's refresh example is wrong.** It shows `gantt.tasks.refresh()`. The actual instance method is **`gantt.refresh(tasks)`** (`src/index.js:233`). Following the README means the chart silently never updates.
+3. **Invalid tasks are dropped silently.** A task with no `end`, with `start` after `end`, or spanning more than ten years is `console.error`-ed and filtered out — no exception, the bar just vanishes. Our domain layer guarantees valid dates, which is the defence; do not weaken it.
+4. **Ids are rewritten**: `id.replaceAll(' ', '_')`, applied to dependency ids too. GitHub node ids contain no spaces so this is safe, but never introduce ids with spaces.
+
+### TypeScript
+
+`frappe-gantt` ships **no type declarations** (`types` is absent from its `package.json`).
+
+**Do not install `@types/frappe-gantt`.** It is stuck at 0.9.0 against a 1.2.2 library and describes a different, older API. It will typecheck cleanly and be wrong at runtime — the worst possible failure mode.
+
+Write a local declaration at `src/types/frappe-gantt.d.ts` covering only what we use.
+
+### Wrapper component rules
+
+- Props in, nothing out. Hold the instance in **`shallowRef`, never `ref`** — deep reactivity over a library that mutates its own internals destroys performance.
+- Import the stylesheet from `frappe-gantt/dist/frappe-gantt.css`.
+- Handle the empty-array case **before** constructing; frappe does not handle zero tasks gracefully.
+- Call `clear()` and drop the instance in `onBeforeUnmount`.
+- Bar click opens `task.url` with `target="_blank"` and `rel="noopener noreferrer"`.
+- Set `readonly: true` in options — this app never edits.
 
 ## 9. Testing
 
