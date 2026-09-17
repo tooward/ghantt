@@ -111,6 +111,8 @@ export default [
 ]
 ```
 
+**This snippet specifies the layering rules only, not the full parser setup.** To lint `.ts` and `.vue` files you must also wire in `typescript-eslint` and `eslint-plugin-vue` (install both, spread their flat configs before the blocks above, and make sure the `.vue` parser is set so `<script setup lang="ts">` parses). Expect some iteration here — it is the one step in Phase 0 that commonly needs adjusting. The acceptance criterion below is what proves you got it right.
+
 Verify the rule actually bites before moving on: temporarily add `import { GitHubClient } from '../adapters/github/GitHubClient'` to a file in `src/domain/`, confirm `npm run lint` **fails**, then remove it.
 
 6. Add scripts to `package.json`:
