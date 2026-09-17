@@ -54,12 +54,37 @@ function render(): void {
   if (!gantt.value) {
     el.innerHTML = ''
     gantt.value = new Gantt(el, frappeTasks, options())
+    applyWarningTooltips()
     return
   }
 
   // The instance method. The package README shows `gantt.tasks.refresh()`,
   // which does not exist — following it means the chart silently never updates.
   gantt.value.refresh(frappeTasks)
+  applyWarningTooltips()
+}
+
+/**
+ * Give warned bars a native tooltip. The library renders each bar group with
+ * `data-id`, and an SVG `<title>` child is the tooltip mechanism inside an
+ * SVG — there is no popup to hang it off, since popups are disabled so that a
+ * click goes straight to the issue.
+ */
+function applyWarningTooltips(): void {
+  const el = container.value
+  if (!el) return
+
+  for (const task of props.tasks) {
+    if (task.warnings.length === 0) continue
+
+    const group = el.querySelector(`[data-id="${CSS.escape(task.id)}"]`)
+    if (!group) continue
+
+    const existing = group.querySelector(':scope > title')
+    const title = existing ?? document.createElementNS('http://www.w3.org/2000/svg', 'title')
+    title.textContent = task.warnings.join(' ')
+    if (!existing) group.prepend(title)
+  }
 }
 
 watch(
@@ -90,5 +115,10 @@ onBeforeUnmount(destroy)
 <style>
 .gh-gantt-chart .bar-wrapper {
   cursor: pointer;
+}
+
+/* Warned tasks: the dates behind the bar were guessed or corrected. */
+.gh-gantt-chart .gh-gantt-warned .bar {
+  fill: #f59e0b;
 }
 </style>

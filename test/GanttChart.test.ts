@@ -33,7 +33,7 @@ describe('GanttChart', () => {
   it('draws an arrow for a dependency', async () => {
     const wrapper = await mountChart([task('a'), task('b', ['a'])])
 
-    expect(wrapper.element.querySelectorAll('.arrow').length).toBeGreaterThan(0)
+    expect(wrapper.element.querySelectorAll('.arrow path').length).toBeGreaterThan(0)
   })
 
   // The trap from ARCHITECTURE.md §8: the library writes _start, _end, _index

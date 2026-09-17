@@ -14,6 +14,8 @@ import type { Task } from '../../domain/Task'
  * Dates are formatted in local time. A date-only string parses to local
  * midnight, so `toISOString()` would report the previous day east of UTC.
  */
+export const WARNED_BAR_CLASS = 'gh-gantt-warned'
+
 export function toFrappeTasks(tasks: Task[]): FrappeTask[] {
   return tasks.map((task) => ({
     id: task.id,
@@ -22,5 +24,7 @@ export function toFrappeTasks(tasks: Task[]): FrappeTask[] {
     end: format(task.due, 'yyyy-MM-dd'),
     progress: 0,
     dependencies: [...task.dependsOn],
+    // Marks the bar so warned tasks can be picked out visually.
+    ...(task.warnings.length > 0 ? { custom_class: WARNED_BAR_CLASS } : {}),
   }))
 }

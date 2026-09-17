@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useBoardStore } from '../../app/stores/board'
 import { useSettingsStore, type ViewMode } from '../../app/stores/settings'
 import GanttChart from '../components/GanttChart.vue'
+import GraphNotice from '../components/GraphNotice.vue'
 
 const board = useBoardStore()
 const settings = useSettingsStore()
@@ -11,6 +12,8 @@ const owner = ref('frappe')
 const name = ref('gantt')
 
 const VIEW_MODES: ViewMode[] = ['Day', 'Week', 'Month']
+
+const warnedTasks = computed(() => board.graph.tasks.filter((task) => task.warnings.length > 0).length)
 
 async function onLoad() {
   if (!owner.value.trim() || !name.value.trim()) return
@@ -56,13 +59,13 @@ async function onLoad() {
     <div v-if="board.tasks.length" class="mt-6">
       <p class="text-sm text-gray-600">
         Showing {{ board.tasks.length }} of {{ board.totalCount }} open issues.
-        <span v-if="board.graph.droppedEdges">
-          {{ board.graph.droppedEdges }} dependencies point to issues outside this view.
-        </span>
-        <span v-if="board.graph.brokenCycles">
-          {{ board.graph.brokenCycles }} circular dependencies ignored.
-        </span>
       </p>
+
+      <GraphNotice
+        :dropped-edges="board.graph.droppedEdges"
+        :broken-cycles="board.graph.brokenCycles"
+        :warned-tasks="warnedTasks"
+      />
 
       <GanttChart class="mt-3" :tasks="board.graph.tasks" :view-mode="settings.viewMode" />
 
