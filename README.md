@@ -27,4 +27,4 @@ Designed after reviewing [GanttLab](https://gitlab.com/ganttlab/ganttlab) (Apach
 
 ## Licence
 
-Not yet chosen. Decide before the first public push.
+Apache License 2.0 — see [LICENSE](LICENSE).

@@ -251,14 +251,46 @@ That is all. If a classic token is used, `public_repo` covers public repositorie
 
 ### Storage policy
 
-A token in browser storage is readable by any successful XSS. There is no way around this without a backend, so mitigate rather than pretend:
+A token in browser storage is readable by any successful XSS. There is no way to eliminate that without a backend, so the design mitigates in tiers rather than pretending otherwise.
 
-- **Default: in-memory + `sessionStorage`.** The token dies when the tab closes.
-- **Opt-in only:** a "remember this token" checkbox persists to IndexedDB. It must be off by default and carry a plain-language warning.
-- Never place the token in a URL, query string, or `localStorage`.
-- Never log the token. Redact it from all error output, including anything sent to a console.
-- The UI must link to GitHub's token-creation page pre-filled with minimal scopes, and must state the recommended expiry (90 days or less).
-- Provide a visible "disconnect" control that clears memory, `sessionStorage`, and IndexedDB.
+**Tier 1 — password-manager compatibility (build in Phase 1).**
+
+Mark the connect form up so the browser's own password manager, and third-party managers (1Password, Bitwarden, iCloud Keychain), recognise it and offer to save the token:
+
+- a real `<form>` element, not a bare div
+- a text input with `autocomplete="username"` holding the GitHub login or a user-chosen label
+- the token input as `<input type="password" autocomplete="current-password">`
+- a genuine submit handler — never auto-submit on paste
+
+This costs nothing and is the single best return on effort. The token then lives in the password manager's vault rather than in our origin's storage, so an XSS firing on page load finds nothing to steal.
+
+Be precise about the limit of that benefit: **once a value is autofilled into the DOM, script on the page can read it.** The gain is at rest, not in-session. So do not auto-fill and auto-submit silently; require the user's explicit action.
+
+**Tier 2 — the "remember me" path.**
+
+Default persistence stays **in-memory + `sessionStorage`**; the token dies with the tab. If persistence is offered, prefer the encrypted option below over storing a bare token.
+
+**Tier 3 — WebAuthn PRF encryption (optional, Phase 6+).**
+
+The strongest option available to a backend-less app. Use the WebAuthn `prf` extension to derive a symmetric key from a passkey, encrypt the token with AES-GCM via WebCrypto, and store **only the ciphertext** in IndexedDB. MDN names this exact use case: deriving "a symmetric key for encrypting sensitive data... that can only be decrypted by a user who has the seed and the associated authenticator."
+
+Why this is genuinely stronger: the key is never in storage, and decryption needs a fresh user-verification gesture. An XSS cannot silently exfiltrate the token — it would have to trigger a biometric or PIN prompt the user can see.
+
+Support for `prf` varies by browser *and* by authenticator (fewer authenticators support PRF at credential-creation time than at assertion time). **Feature-detect at runtime and fall back to session-only.** Never assume availability.
+
+**Rules that hold regardless of tier:**
+
+- Never use `localStorage` for the token. Settings only.
+- Never put the token in a URL, query string, or fragment.
+- Never log the token; redact it from every error path and console output.
+- Link to GitHub's fine-grained token page, state the minimal scopes, recommend an expiry of 90 days or less.
+- Provide a visible "disconnect" that clears memory, `sessionStorage`, and IndexedDB.
+
+### Rejected: the Credential Management API
+
+`navigator.credentials` with `PasswordCredential` looks like the purpose-built answer and is not. MDN classifies it **"Not Baseline — Limited Availability"**, noting it "does not work in some of the most widely-used browsers" — it remains effectively Chromium-only and is still marked experimental.
+
+Do not build the storage path on it. It may be added later as pure progressive enhancement behind a feature check, but it can never be the only route to a stored token.
 
 ### Error handling
 

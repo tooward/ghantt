@@ -141,7 +141,25 @@ export class TokenStore {
 query { viewer { login avatarUrl } rateLimit { remaining resetAt } }
 ```
 
-**`src/ui/views/ConnectView.vue`** — token input (`type="password"`), a "remember this token" checkbox defaulting to **unchecked**, a link to GitHub's fine-grained token page, the required scopes stated in plain text (Issues: Read-only, Metadata: Read-only), an expiry recommendation, and an error area.
+**`src/ui/views/ConnectView.vue`** — the connect form. Its markup matters as much as its logic, because it is what makes the browser's password manager work (ARCHITECTURE.md §6, Tier 1). Build it as:
+
+```html
+<form @submit.prevent="onSubmit">
+  <input type="text" name="username" autocomplete="username" v-model="label" />
+  <input type="password" name="token" autocomplete="current-password" v-model="token" />
+  <button type="submit">Connect</button>
+</form>
+```
+
+Requirements:
+
+- A **real `<form>` with a real submit button**. A div with a click handler will not trigger a save prompt in any password manager.
+- Both inputs need the `autocomplete` values shown. Without `autocomplete="username"` on a companion field, most managers will not offer to save.
+- The username field holds a user-chosen label or GitHub login — it is **not** used for authentication, only to make the credential findable in the vault.
+- **Never auto-submit on paste or on autofill.** The user submits explicitly.
+- Also include: a "remember this token" checkbox defaulting to **unchecked**, a link to GitHub's fine-grained token page, the required scopes in plain text (Issues: Read-only, Metadata: Read-only), an expiry recommendation, and an error area.
+
+**Do not use `navigator.credentials` / `PasswordCredential`.** It is Chromium-only and MDN classifies it "Not Baseline — Limited Availability". See ARCHITECTURE.md §6.
 
 ### Acceptance criteria
 
@@ -149,6 +167,7 @@ query { viewer { login avatarUrl } rateLimit { remaining resetAt } }
 - Manual: `npm run dev`, paste a valid token → the view shows your GitHub login and remaining rate limit.
 - Manual: paste `ghp_invalid` → a readable error, no unhandled promise rejection in the console.
 - Manual: with "remember" unchecked, close and reopen the tab → the app asks for the token again.
+- Manual: submitting the form causes the browser (or your password manager) to offer to save the credential. If no prompt appears, the `autocomplete` attributes or the `<form>`/submit structure are wrong — fix the markup, do not work around it in JS.
 - Unit test: a mocked 200 response containing `{errors:[{type:'RATE_LIMITED'}]}` causes `query()` to **throw `RateLimitError`**, not return.
 - Grep check — must print nothing:
 
@@ -385,8 +404,13 @@ Add a view-mode switcher (Day / Week / Month) backed by `settings.ts`.
 3. Persist the last repo, view mode, field names and prefixes to `localStorage` — **settings only, never the token.**
 4. Loading skeletons, keyboard-accessible controls, and a visible error banner.
 5. Settings panel exposing: start/due field names, `GanttStart:`/`GanttDue:` prefixes, `defaultTaskDays`, page size.
-6. Build and deploy to a static host. Set Vite's `base` correctly if serving from a subpath.
-7. Write the real `README.md`: what it does, how to create a minimal-scope token, the date-resolution chain explained for users, and a clear statement that the token stays in the browser and is never sent anywhere but `api.github.com`.
+6. **Optional, recommended — encrypted "remember me" via WebAuthn PRF.** Replace plaintext-in-IndexedDB persistence with: derive a symmetric key from a passkey using the WebAuthn `prf` extension, encrypt the token with AES-GCM via WebCrypto, store only the ciphertext. See ARCHITECTURE.md §6 Tier 3.
+   - **Feature-detect at runtime.** `prf` support varies by browser *and* by authenticator, and fewer authenticators support it at credential-creation time than at assertion time.
+   - If detection fails, fall back silently to session-only storage and tell the user persistence is unavailable.
+   - Do not block the release on this. Ship session-only if it proves awkward.
+7. Add the Apache 2.0 short header to source files (the template in the LICENSE appendix). Not legally required, but conventional and cheap.
+8. Build and deploy to a static host. Set Vite's `base` correctly if serving from a subpath.
+9. Write the real `README.md`: what it does, how to create a minimal-scope token, the date-resolution chain explained for users, and a clear statement that the token stays in the browser and is never sent anywhere but `api.github.com`.
 
 ### Acceptance criteria
 
