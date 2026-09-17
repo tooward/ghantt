@@ -525,6 +525,7 @@ Add a view-mode switcher backed by `settings.ts`. Valid values are exactly: `'Ho
    - **Feature-detect at runtime.** `prf` support varies by browser *and* by authenticator, and fewer authenticators support it at credential-creation time than at assertion time.
    - If detection fails, fall back silently to session-only storage and tell the user persistence is unavailable.
    - Do not block the release on this. Ship session-only if it proves awkward.
+   - **Deferred in the build.** It cannot be exercised without a PRF-capable authenticator and a user-verification gesture, and an unexercised encryption routine in the one security-sensitive path is worse than the honest plaintext option with a warning beside it. `TokenStore` keeps every persistent write in one place so the swap stays small.
 7. Add the Apache 2.0 short header to source files (the template in the LICENSE appendix). Not legally required, but conventional and cheap.
 8. Build and deploy to a static host. Set Vite's `base` correctly if serving from a subpath.
 9. Write the real `README.md`: what it does, how to create a minimal-scope token, the date-resolution chain explained for users, and a clear statement that the token stays in the browser and is never sent anywhere but `api.github.com`.

@@ -283,13 +283,15 @@ Be precise about the limit of that benefit: **once a value is autofilled into th
 
 Default persistence stays **in-memory + `sessionStorage`**; the token dies with the tab. If persistence is offered, prefer the encrypted option below over storing a bare token.
 
-**Tier 3 — WebAuthn PRF encryption (optional, Phase 6+).**
+**Tier 3 — WebAuthn PRF encryption (optional, Phase 6+). NOT IMPLEMENTED — see the note at the end of this tier.**
 
 The strongest option available to a backend-less app. Use the WebAuthn `prf` extension to derive a symmetric key from a passkey, encrypt the token with AES-GCM via WebCrypto, and store **only the ciphertext** in IndexedDB. MDN names this exact use case: deriving "a symmetric key for encrypting sensitive data... that can only be decrypted by a user who has the seed and the associated authenticator."
 
 Why this is genuinely stronger: the key is never in storage, and decryption needs a fresh user-verification gesture. An XSS cannot silently exfiltrate the token — it would have to trigger a biometric or PIN prompt the user can see.
 
 Support for `prf` varies by browser *and* by authenticator (fewer authenticators support PRF at credential-creation time than at assertion time). **Feature-detect at runtime and fall back to session-only.** Never assume availability.
+
+**Status as built (Phase 6):** not implemented. The "remember this token" option stores the token in IndexedDB in plaintext, and the connect form says so in plain words. Tier 3 was deferred because it could not be verified in the build environment — a PRF-capable authenticator and a user-verification gesture are both required to exercise the path even once, and shipping an unexercised encryption routine in the one security-sensitive part of the app is worse than shipping the honest plaintext option beside a warning. `TokenStore` funnels every persistent write through one class so the swap stays small when someone can test it.
 
 **Rules that hold regardless of tier:**
 
