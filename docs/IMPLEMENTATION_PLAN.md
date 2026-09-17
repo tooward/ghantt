@@ -452,7 +452,7 @@ declare module 'frappe-gantt' {
 Props: `tasks: Task[]`, `viewMode: string`. The API below is verified against the source of `frappe-gantt@1.2.2` — **use it as written and do not consult blog posts or the package README for these calls.**
 
 - Construct with `new Gantt(el, frappeTasks, { view_mode, readonly: true, on_click })`. Options are **snake_case**.
-- Import CSS: `import 'frappe-gantt/dist/frappe-gantt.css'`. The package's `exports` map has no subpath entry for it (see ARCHITECTURE.md §8) — if resolution fails, add a Vite alias rather than copying the file into the repo.
+- Import CSS: `import 'frappe-gantt/dist/frappe-gantt.css'`. **This does not resolve on its own** — the package's `exports` map has no subpath entry, and the build fails with "is not exported under the conditions". `vite.config.ts` aliases that one specifier to the file in `node_modules`; keep the alias rather than vendoring a copy of the stylesheet.
 - **Map domain → frappe field names.** They differ: `title` → **`name`**, `due` → **`end`**, `dependsOn` → `dependencies`. Dates go in as `YYYY-MM-DD` strings.
 - **Build fresh plain objects for every render.** The library **mutates what you pass it** — it writes `_start`, `_end`, `_index`, overwrites `dependencies`, and rewrites `id`. Handing it store objects or Vue reactive proxies will corrupt state. Never pass `props.tasks` or anything derived from it by reference.
 - Hold the instance in **`shallowRef`, not `ref`**.
@@ -474,6 +474,10 @@ Add a view-mode switcher backed by `settings.ts`. Valid values are exactly: `'Ho
 - Manual: a repo with zero issues shows an empty state rather than a broken chart.
 - Manual: no console errors or Vue warnings during any of the above.
 - **Mutation check:** after the chart renders, confirm in the console that the board store's tasks still have their original shape and no `_start` / `_end` / `_index` properties. Their presence means objects were passed by reference — fix the mapping to build fresh copies.
+
+**Most of the manual checks above are now automated** in `test/GanttChart.test.ts`, which mounts the real component against the real library under jsdom and asserts bars per task, arrows for dependencies, the empty state, full replacement when the task set changes, click-through to the issue URL, teardown on unmount, and the mutation check. jsdom has no SVG layout, so `test/setup/jsdom-svg.ts` stubs `getBBox` and `getComputedTextLength`; without it frappe-gantt throws while positioning labels. Run the browser checks anyway — jsdom proves the wiring, not the visuals.
+
+**`on_click` is absent from the library's `DEFAULT_OPTIONS`** but works: `trigger_event` looks options up by name at call time (`options['on_' + event]`). Set `popup: false` alongside it, otherwise a bar click also opens the built-in popup.
 
 ### Commit
 

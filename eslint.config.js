@@ -1,4 +1,5 @@
 import js from '@eslint/js'
+import globals from 'globals'
 import pluginVue from 'eslint-plugin-vue'
 import tseslint from 'typescript-eslint'
 import vueParser from 'vue-eslint-parser'
@@ -16,6 +17,11 @@ export default [
   ...tseslint.configs.recommended,
   ...pluginVue.configs['flat/essential'],
 
+  {
+    // The app is a browser-only SPA; tests run in Node.
+    files: ['src/**/*.{ts,vue}'],
+    languageOptions: { globals: globals.browser },
+  },
   {
     files: ['**/*.vue'],
     languageOptions: {

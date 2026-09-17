@@ -1,14 +1,16 @@
 <script setup lang="ts">
-import { format } from 'date-fns'
 import { ref } from 'vue'
 import { useBoardStore } from '../../app/stores/board'
+import { useSettingsStore, type ViewMode } from '../../app/stores/settings'
+import GanttChart from '../components/GanttChart.vue'
 
 const board = useBoardStore()
+const settings = useSettingsStore()
 
 const owner = ref('frappe')
 const name = ref('gantt')
 
-const day = (date: Date) => format(date, 'yyyy-MM-dd')
+const VIEW_MODES: ViewMode[] = ['Day', 'Week', 'Month']
 
 async function onLoad() {
   if (!owner.value.trim() || !name.value.trim()) return
@@ -34,6 +36,17 @@ async function onLoad() {
       >
         {{ board.loading ? 'Loading…' : 'Load' }}
       </button>
+
+      <div class="ml-auto">
+        <label for="view-mode" class="block text-sm font-medium">Scale</label>
+        <select
+          id="view-mode"
+          v-model="settings.viewMode"
+          class="mt-1 rounded border border-gray-300 px-3 py-2"
+        >
+          <option v-for="mode in VIEW_MODES" :key="mode" :value="mode">{{ mode }}</option>
+        </select>
+      </div>
     </form>
 
     <p v-if="board.error" role="alert" class="mt-4 rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800">
@@ -51,30 +64,7 @@ async function onLoad() {
         </span>
       </p>
 
-      <table class="mt-3 w-full text-left text-sm">
-        <thead class="border-b border-gray-300 text-gray-600">
-          <tr>
-            <th class="py-2 pr-3">#</th>
-            <th class="py-2 pr-3">Title</th>
-            <th class="py-2 pr-3">Start</th>
-            <th class="py-2 pr-3">Due</th>
-            <th class="py-2 pr-3">Blocked by</th>
-            <th class="py-2">Warnings</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="task in board.graph.tasks" :key="task.id" class="border-b border-gray-100">
-            <td class="py-2 pr-3 tabular-nums">{{ task.number }}</td>
-            <td class="py-2 pr-3">
-              <a :href="task.url" target="_blank" rel="noopener noreferrer" class="underline">{{ task.title }}</a>
-            </td>
-            <td class="py-2 pr-3 tabular-nums">{{ day(task.start) }}</td>
-            <td class="py-2 pr-3 tabular-nums">{{ day(task.due) }}</td>
-            <td class="py-2 pr-3 tabular-nums">{{ task.dependsOn.length }}</td>
-            <td class="py-2 text-amber-700">{{ task.warnings.join(' ') }}</td>
-          </tr>
-        </tbody>
-      </table>
+      <GanttChart class="mt-3" :tasks="board.graph.tasks" :view-mode="settings.viewMode" />
 
       <button
         v-if="board.hasNextPage"
