@@ -1,0 +1,29 @@
+query BoardIssues($owner: String!, $repo: String!, $first: Int!, $after: String) {
+  repository(owner: $owner, name: $repo) {
+    issues(first: $first, after: $after, states: OPEN,
+           orderBy: {field: CREATED_AT, direction: ASC}) {
+      pageInfo { hasNextPage endCursor }
+      totalCount
+      nodes {
+        id
+        number
+        title
+        url
+        createdAt
+        body
+        milestone { title dueOn }
+        issueFieldValues(first: 20) {
+          nodes {
+            __typename
+            ... on IssueFieldDateValue {
+              value
+              field { ... on IssueFieldDate { name } }
+            }
+          }
+        }
+        blockedBy(first: 50) { nodes { id number } }
+      }
+    }
+  }
+  rateLimit { cost remaining resetAt }
+}

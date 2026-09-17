@@ -381,6 +381,8 @@ export interface IssueSource {
 
 **Critical:** after each page loads, append the new tasks and then re-run `pruneDanglingEdges` and `detectAndBreakCycles` over the **entire accumulated array**, not just the new page. A later page can supply the target of an edge that dangled earlier.
 
+**Do not write the pruned result back over the store's tasks.** Doing so deletes the very edge the next page would heal — it is gone from `dependsOn`, so it can never come back, and no unit test of a single page load will notice. Keep `tasks` exactly as mapped, with `dependsOn` as `blockedBy` gave it, and expose the pruned, cycle-broken set as a **derived** value recomputed from the whole array (`board.graph`). That also stops `detectAndBreakCycles` appending a duplicate cycle warning on every page load, and gives Phase 5 the dropped-edge count it needs.
+
 **`src/ui/views/BoardView.vue`** — repo owner/name inputs, a "Load" button, and for now a **plain table** of resolved tasks (number, title, start, due, dependsOn count, warnings).
 
 ### Acceptance criteria
@@ -392,8 +394,10 @@ export interface IssueSource {
 - Unit test: `mapIssue` against a **captured real fixture** in `test/fixtures/` produces the expected `Task`. Capture it with the authenticated GitHub CLI (no token ends up in the file):
 
 ```bash
-gh api graphql -F query=@src/adapters/github/queries/boardIssues.graphql -F owner=frappe -F repo=gantt -F first=5 > test/fixtures/boardIssues.json
+gh api graphql -F query=@src/adapters/github/queries/boardIssues.graphql -F owner=frappe -F repo=gantt -F first=5 > test/fixtures/boardIssues.frappe-gantt.json
 ```
+
+  That capture proves the empty-issue-fields case and little else: every node in `frappe/gantt` has `issueFieldValues: []`, `milestone: null` and `blockedBy: []`. A second, clearly-labelled **synthetic** fixture is therefore required, and is the only cover for rung 1 of both date chains and for dependency mapping. It must include a mixed `issueFieldValues` union (a text or select value alongside the date ones — those carry neither `value` nor `field`), a date value whose `field` is `{}`, a `field.name` differing in case from the configured name, a `blockedBy` edge pointing outside the fixture's own nodes, and a non-null milestone.
 
   Check the file for any token-like string before committing it.
 - Unit test: a node with `issueFieldValues.nodes: []` still maps to a task with valid dates.

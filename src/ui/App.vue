@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
 import { useAuthStore } from '../app/stores/auth'
+import BoardView from './views/BoardView.vue'
 import ConnectView from './views/ConnectView.vue'
 
 const auth = useAuthStore()
@@ -33,9 +34,7 @@ onMounted(() => {
 
     <main class="mx-auto max-w-5xl px-6 py-10">
       <ConnectView v-if="!auth.isConnected" />
-      <p v-else class="text-sm text-gray-600">
-        Connected as {{ auth.user?.login }}. Issue loading arrives in Phase 3.
-      </p>
+      <BoardView v-else />
     </main>
   </div>
 </template>

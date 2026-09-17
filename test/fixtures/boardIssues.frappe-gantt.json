@@ -1,0 +1,95 @@
+{
+    "data": {
+        "repository": {
+            "issues": {
+                "pageInfo": {
+                    "hasNextPage": true,
+                    "endCursor": "Y3Vyc29yOnYyOpK0MjAyNC0wOS0xMlQwNzowMjozNVrOlkt2yg=="
+                },
+                "totalCount": 43,
+                "nodes": [
+                    {
+                        "id": "MDU6SXNzdWUyMjY3MTA2OTU=",
+                        "number": 18,
+                        "title": "Dynamic dependency",
+                        "url": "https://github.com/frappe/gantt/issues/18",
+                        "createdAt": "2017-05-05T22:48:48Z",
+                        "body": "Hello there,\r\nThis is a really good looking and well designed gantt library.\r\nIs it possible to create tasks dependencies visually ?\r\nThanks !",
+                        "milestone": null,
+                        "issueFieldValues": {
+                            "nodes": []
+                        },
+                        "blockedBy": {
+                            "nodes": []
+                        }
+                    },
+                    {
+                        "id": "MDU6SXNzdWU4NDIwMTA4NjY=",
+                        "number": 216,
+                        "title": "Is this lib allow really long lists and columns ?",
+                        "url": "https://github.com/frappe/gantt/issues/216",
+                        "createdAt": "2021-03-26T14:30:45Z",
+                        "body": "Does this lib works for lists like more than 10000 lines and 5000 columns ?\r\n\r\nFor a big list of tasks.\r\n\r\nThanks a lot ",
+                        "milestone": null,
+                        "issueFieldValues": {
+                            "nodes": []
+                        },
+                        "blockedBy": {
+                            "nodes": []
+                        }
+                    },
+                    {
+                        "id": "I_kwDOA_jtLc5upYqd",
+                        "number": 341,
+                        "title": "[Feature Request] add TypeScript support",
+                        "url": "https://github.com/frappe/gantt/issues/341",
+                        "createdAt": "2023-08-18T09:04:12Z",
+                        "body": "![image](https://github.com/frappe/gantt/assets/100518846/fe6b6194-9273-4b19-bbd8-5b0d5361ad44)\r\n",
+                        "milestone": null,
+                        "issueFieldValues": {
+                            "nodes": []
+                        },
+                        "blockedBy": {
+                            "nodes": []
+                        }
+                    },
+                    {
+                        "id": "I_kwDOA_jtLc6PCQGC",
+                        "number": 407,
+                        "title": "[Feature Request] Can we can download it or export it as excel feature for the gantt chart ",
+                        "url": "https://github.com/frappe/gantt/issues/407",
+                        "createdAt": "2024-07-10T04:42:24Z",
+                        "body": "It would be very helpful if we could use the download feature for the generated Gantt Chart or export as excel feature.",
+                        "milestone": null,
+                        "issueFieldValues": {
+                            "nodes": []
+                        },
+                        "blockedBy": {
+                            "nodes": []
+                        }
+                    },
+                    {
+                        "id": "I_kwDOA_jtLc6WS3bK",
+                        "number": 425,
+                        "title": "Improvement: Use ```on_progress``` and ```on_date_change``` as validity checks",
+                        "url": "https://github.com/frappe/gantt/issues/425",
+                        "createdAt": "2024-09-12T07:02:35Z",
+                        "body": "Currently, the ```on_progress``` and ```on_date_change``` events are triggered after a task has been updated. As such, the secod/third parameters, presumably containing the new values, are redundant (they are the same as their respective fields in the task object).\r\n\r\nA fix for this would be to trigger the event before the update, or to create a new event that gets triggered before as opposed to after a change.\r\n\r\nAdditionally, the callbacks could return a true or false depending on if the change should continue. On a false, the task is reverted back to its state before starting the change.\r\n\r\n\r\nExample:\r\n\r\nIf I want to implement a validation check for the new date (like not allowing a task to start on certain days, or not allowing any progress changes), I can't use the old values as part of that check or to revert the bar to it's previous state on a failure.",
+                        "milestone": null,
+                        "issueFieldValues": {
+                            "nodes": []
+                        },
+                        "blockedBy": {
+                            "nodes": []
+                        }
+                    }
+                ]
+            }
+        },
+        "rateLimit": {
+            "cost": 1,
+            "remaining": 4945,
+            "resetAt": "2026-09-17T22:19:48Z"
+        }
+    }
+}

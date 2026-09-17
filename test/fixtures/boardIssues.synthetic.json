@@ -1,0 +1,75 @@
+{
+  "_comment": "SYNTHETIC — hand-written, not captured from the API. It covers what boardIssues.frappe-gantt.json cannot: issue date fields, milestones, mixed IssueFieldValue union members, and blockedBy edges (one of which points outside this set). Field shapes match the verified query in ARCHITECTURE.md §5.2.",
+  "data": {
+    "repository": {
+      "issues": {
+        "pageInfo": { "hasNextPage": false, "endCursor": "Y3Vyc29yOnYyOpHOAAAAAQ==" },
+        "totalCount": 3,
+        "nodes": [
+          {
+            "id": "I_kwDOSYNTH001",
+            "number": 101,
+            "title": "Design the thing",
+            "url": "https://github.com/acme/widgets/issues/101",
+            "createdAt": "2026-02-01T09:00:00Z",
+            "body": "No dates here.",
+            "milestone": null,
+            "issueFieldValues": {
+              "nodes": [
+                { "__typename": "IssueFieldSingleSelectValue" },
+                {
+                  "__typename": "IssueFieldDateValue",
+                  "value": "2026-03-02",
+                  "field": { "name": "start DATE" }
+                },
+                {
+                  "__typename": "IssueFieldDateValue",
+                  "value": "2026-03-09",
+                  "field": { "name": "Target date" }
+                },
+                { "__typename": "IssueFieldTextValue" }
+              ]
+            },
+            "blockedBy": { "nodes": [] }
+          },
+          {
+            "id": "I_kwDOSYNTH002",
+            "number": 102,
+            "title": "Build the thing",
+            "url": "https://github.com/acme/widgets/issues/102",
+            "createdAt": "2026-02-02T09:00:00Z",
+            "body": "GanttStart: 2026-03-10\nGanttDue: 2026-03-20\n",
+            "milestone": { "title": "v1", "dueOn": "2026-04-30T00:00:00Z" },
+            "issueFieldValues": {
+              "nodes": [
+                {
+                  "__typename": "IssueFieldDateValue",
+                  "value": "2026-03-15",
+                  "field": {}
+                }
+              ]
+            },
+            "blockedBy": {
+              "nodes": [
+                { "id": "I_kwDOSYNTH001", "number": 101 },
+                { "id": "I_kwDOELSEWHERE", "number": 7 }
+              ]
+            }
+          },
+          {
+            "id": "I_kwDOSYNTH003",
+            "number": 103,
+            "title": "Ship the thing",
+            "url": "https://github.com/acme/widgets/issues/103",
+            "createdAt": "2026-02-03T09:00:00Z",
+            "body": null,
+            "milestone": { "title": "v1", "dueOn": "2026-04-30T00:00:00Z" },
+            "issueFieldValues": { "nodes": [] },
+            "blockedBy": { "nodes": [{ "id": "I_kwDOSYNTH002", "number": 102 }] }
+          }
+        ]
+      }
+    },
+    "rateLimit": { "cost": 1, "remaining": 4998, "resetAt": "2026-09-17T23:59:59Z" }
+  }
+}
