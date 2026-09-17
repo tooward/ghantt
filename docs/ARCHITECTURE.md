@@ -61,6 +61,17 @@ All versions verified against the npm registry on 2026-09-17. **Re-check before 
 | Dates | `date-fns` | latest | Tree-shakeable; do **not** use `moment` |
 | HTTP | native `fetch` | — | No axios. One POST endpoint is all we need. |
 
+### Versions actually installed (Phase 0, 2026-09-17)
+
+Recorded so later phases know what the code was written against:
+
+`vue` 3.5.43 · `vite` 8.3.0 · `@vitejs/plugin-vue` 6.0.9 · `typescript` **6.0.3** · `vue-tsc` 3.3.11 · `pinia` 4.0.3 · `tailwindcss` / `@tailwindcss/vite` 4.3.3 · `frappe-gantt` **1.2.2** · `date-fns` 4.4.0 · `vitest` 5.0.1 · `eslint` 10.10.0 · `typescript-eslint` 8.70.0 · `eslint-plugin-vue` 10.11.0 · Node 24.18.0
+
+Two notes:
+
+- **TypeScript resolved to 6.0.3, not the 7.0.2 in the table above.** The `vue-ts` Vite template pins `~6.0.2`. Nothing in this design depends on a 7.x feature, so it was left alone.
+- **`frappe-gantt` resolved to exactly 1.2.2**, the version §8 was read from, so the API contract there stands verified.
+
 ### Libraries deliberately rejected
 
 - **Apollo Client / urql** — a normalized cache we do not need. GraphQL is one `POST` with a JSON body; Pinia already owns state. Adds 30–50 kB gzipped plus the `graphql` package (~40 kB) for zero benefit here.
@@ -364,7 +375,7 @@ Write a local declaration at `src/types/frappe-gantt.d.ts` covering only what we
 ### Wrapper component rules
 
 - Props in, nothing out. Hold the instance in **`shallowRef`, never `ref`** — deep reactivity over a library that mutates its own internals destroys performance.
-- Import the stylesheet from `frappe-gantt/dist/frappe-gantt.css`.
+- Import the stylesheet from `frappe-gantt/dist/frappe-gantt.css`. **Caveat found in Phase 0:** the package's `exports` map declares only `"."` (with `require` / `import` / `style` conditions) and no subpath, so a bare deep import of the CSS can fail to resolve. If it does, alias it in `vite.config.ts` or import via an explicit relative path — do not vendor a copy of the stylesheet.
 - Handle the empty-array case **before** constructing; frappe does not handle zero tasks gracefully.
 - Call `clear()` and drop the instance in `onBeforeUnmount`.
 - Bar click opens `task.url` with `target="_blank"` and `rel="noopener noreferrer"`.

@@ -32,10 +32,10 @@ Read [ARCHITECTURE.md](./ARCHITECTURE.md) first. This document assumes its decis
 
 ### Steps
 
-1. Scaffold in the existing repo directory (`~/Development/gh-gantt`, already `git init`-ed on `main`):
+1. Scaffold in the existing repo directory (`~/dev/gh-gantt`, already `git init`-ed on `main`):
 
 ```bash
-cd ~/Development/gh-gantt && npm create vite@latest . -- --template vue-ts
+cd ~/dev/gh-gantt && npm create vite@latest . -- --template vue-ts
 ```
 
 2. Install dependencies. **Check the resolved versions afterwards** — the versions in ARCHITECTURE.md §3 were correct on 2026-09-17 but move fast.
@@ -81,7 +81,7 @@ declare module '*.graphql?raw' {
 4. Create the directory skeleton with a `.gitkeep` in each:
 
 ```bash
-cd ~/Development/gh-gantt && mkdir -p src/{domain,ports,adapters/github/queries,adapters/storage,app/stores,ui/views,ui/components} test/fixtures && find src test -type d -empty -exec touch {}/.gitkeep \;
+cd ~/dev/gh-gantt && mkdir -p src/{domain,ports,adapters/github/queries,adapters/storage,app/stores,ui/views,ui/components} test/fixtures && find src test -type d -empty -exec touch {}/.gitkeep \;
 ```
 
 5. Add the **dependency-rule lint**. This is what keeps the layering honest; without it the boundaries rot within a week. ESLint 9 uses **flat config** — create `eslint.config.js` (not `.eslintrc`):
@@ -111,6 +111,8 @@ export default [
 ]
 ```
 
+**The snippet above has a real bug — read this before copying it.** All three blocks match `src/domain/**/*.ts`, and ESLint does **not** merge `no-restricted-imports` across blocks: the last matching block wins outright, so the domain and ui restrictions are silently replaced by the third block's and never fire. Order the blocks general -> specific and repeat every applicable pattern in each. See `eslint.config.js` for the working version.
+
 **This snippet specifies the layering rules only, not the full parser setup.** To lint `.ts` and `.vue` files you must also wire in `typescript-eslint` and `eslint-plugin-vue` (install both, spread their flat configs before the blocks above, and make sure the `.vue` parser is set so `<script setup lang="ts">` parses). Expect some iteration here — it is the one step in Phase 0 that commonly needs adjusting. The acceptance criterion below is what proves you got it right.
 
 Verify the rule actually bites before moving on: temporarily add `import { GitHubClient } from '../adapters/github/GitHubClient'` to a file in `src/domain/`, confirm `npm run lint` **fails**, then remove it.
@@ -129,6 +131,10 @@ Verify the rule actually bites before moving on: temporarily add `import { GitHu
 }
 ```
 
+6b. **Two scripts fail on an empty project.** `eslint src test` exits non-zero when `test/` holds only a `.gitkeep` (no lintable files), and `vitest run` exits 1 with zero test files. Landing one real test in Phase 0 (`test/smoke.test.ts`) fixes both without adding `--passWithNoTests` flags that would later hide a broken test run.
+
+6c. **`eslint-plugin-vue`: use `flat/essential`, not `flat/recommended`.** The latter adds line-break formatting rules that fail under `--max-warnings 0` on any hand-written template.
+
 7. Create `.gitignore` containing at least: `node_modules`, `dist`, `.env`, `.env.*`, `.DS_Store`, `coverage`.
 
 8. Copy `docs/ARCHITECTURE.md` and this file into the repo if not already present, and write a short `README.md` pointing at both.
@@ -136,7 +142,7 @@ Verify the rule actually bites before moving on: temporarily add `import { GitHu
 ### Acceptance criteria
 
 ```bash
-cd ~/Development/gh-gantt && npm run verify
+cd ~/dev/gh-gantt && npm run verify
 ```
 
 - Exits 0.
@@ -230,7 +236,7 @@ Requirements:
 - Grep check — must print nothing:
 
 ```bash
-cd ~/Development/gh-gantt && grep -rn "localStorage" src/ || echo "clean"
+cd ~/dev/gh-gantt && grep -rn "localStorage" src/ || echo "clean"
 ```
 
 ### Commit
@@ -313,7 +319,7 @@ export function detectAndBreakCycles(tasks: Task[]): { tasks: Task[]; brokenEdge
 ### Acceptance criteria
 
 ```bash
-cd ~/Development/gh-gantt && npm run test -- --coverage
+cd ~/dev/gh-gantt && npm run test -- --coverage
 ```
 
 - `src/domain/**` line coverage ≥ 90%.
@@ -329,7 +335,7 @@ cd ~/Development/gh-gantt && npm run test -- --coverage
 - Grep check — must print nothing:
 
 ```bash
-cd ~/Development/gh-gantt && grep -rn "from 'vue'\|adapters/" src/domain/ || echo "clean"
+cd ~/dev/gh-gantt && grep -rn "from 'vue'\|adapters/" src/domain/ || echo "clean"
 ```
 
 ### Commit
@@ -442,7 +448,7 @@ declare module 'frappe-gantt' {
 Props: `tasks: Task[]`, `viewMode: string`. The API below is verified against the source of `frappe-gantt@1.2.2` — **use it as written and do not consult blog posts or the package README for these calls.**
 
 - Construct with `new Gantt(el, frappeTasks, { view_mode, readonly: true, on_click })`. Options are **snake_case**.
-- Import CSS: `import 'frappe-gantt/dist/frappe-gantt.css'`.
+- Import CSS: `import 'frappe-gantt/dist/frappe-gantt.css'`. The package's `exports` map has no subpath entry for it (see ARCHITECTURE.md §8) — if resolution fails, add a Vite alias rather than copying the file into the repo.
 - **Map domain → frappe field names.** They differ: `title` → **`name`**, `due` → **`end`**, `dependsOn` → `dependencies`. Dates go in as `YYYY-MM-DD` strings.
 - **Build fresh plain objects for every render.** The library **mutates what you pass it** — it writes `_start`, `_end`, `_index`, overwrites `dependencies`, and rewrites `id`. Handing it store objects or Vue reactive proxies will corrupt state. Never pass `props.tasks` or anything derived from it by reference.
 - Hold the instance in **`shallowRef`, not `ref`**.
@@ -525,7 +531,7 @@ Add a view-mode switcher backed by `settings.ts`. Valid values are exactly: `'Ho
 - Final check — must print nothing:
 
 ```bash
-cd ~/Development/gh-gantt && grep -rniE "gh[pousr]_[A-Za-z0-9]{16,}" . --exclude-dir=node_modules --exclude-dir=.git || echo "no tokens committed"
+cd ~/dev/gh-gantt && grep -rniE "gh[pousr]_[A-Za-z0-9]{16,}" . --exclude-dir=node_modules --exclude-dir=.git || echo "no tokens committed"
 ```
 
 ### Commit
