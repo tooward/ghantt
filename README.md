@@ -23,7 +23,7 @@ npm run build    # production build into dist/
 npm run preview  # serve the production build
 ```
 
-The build output in `dist/` is plain static files and can be served from any static host. If you serve it from a subpath rather than a domain root, set [`base`](https://vite.dev/config/shared-options.html#base) in `vite.config.ts` first.
+The build output in `dist/` is plain static files and can be served from any static host. Nothing is deployed yet and `base` is `'/'`, which suits a domain root; if you serve from a subpath — GitHub Pages at `<user>.github.io/gh-gantt/`, say — set [`base`](https://vite.dev/config/shared-options.html#base) in `vite.config.ts` to match before building.
 
 ## Creating a token
 
@@ -42,11 +42,12 @@ A classic token also works — `public_repo` for public repositories, `repo` for
 
 - By default the token is held in memory and `sessionStorage`, so it is forgotten when you close the tab.
 - The connect form is marked up so your browser or password manager offers to save it. That is the recommended place to keep it: it then lives in the manager's vault rather than in this site's storage.
-- Ticking "remember this token on this device" stores it in IndexedDB **unencrypted**. Anything that can run script on the page could then read it. Leave it off unless you need it.
+- Ticking "remember this token on this device" encrypts it with a key derived from a **passkey** and stores only the ciphertext. You are asked to create a passkey, then to use it; getting the token back later needs your fingerprint, face or PIN, so a script on the page cannot read it silently. If your browser or authenticator cannot do this, the app stays session-only and tells you — it never falls back to storing a bare token.
+- Unlocking is an explicit "Unlock with passkey" button. The app never prompts for your passkey just because a page loaded.
 - The token is never written to local storage, never put in a URL, and is redacted from error messages.
-- "Disconnect" clears memory, session storage and IndexedDB.
+- "Disconnect" clears memory, session storage and the encrypted record.
 
-Encrypting the remembered token with a passkey (WebAuthn PRF) is designed but not implemented — see `docs/ARCHITECTURE.md` §6, Tier 3.
+The mechanism is the WebAuthn `prf` extension plus AES-GCM via WebCrypto — see `docs/ARCHITECTURE.md` §6, Tier 3.
 
 ## Where the dates come from
 

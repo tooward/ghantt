@@ -58,6 +58,19 @@ onMounted(() => {
     </header>
 
     <main class="mx-auto max-w-5xl px-6 py-10">
+      <!-- "Remember" was asked for and could not be done safely; say so where
+           it will actually be read, which is after the view has switched. -->
+      <p
+        v-if="auth.persistenceNotice"
+        role="status"
+        class="mb-6 flex items-start gap-3 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+      >
+        <span class="flex-1">{{ auth.persistenceNotice }}</span>
+        <button type="button" class="shrink-0 underline" @click="auth.persistenceNotice = null">
+          Dismiss
+        </button>
+      </p>
+
       <ConnectView v-if="!auth.isConnected" />
       <BoardView v-else />
     </main>

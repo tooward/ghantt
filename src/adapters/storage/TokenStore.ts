@@ -21,10 +21,10 @@
  *   - Local storage (the persistent, origin-wide kind) is never used for the
  *     token. Only session storage, which dies with the tab; that is the
  *     default and the safe case.
- *   - `'persistent'` writes the token to IndexedDB and is opt-in only. It is
- *     plaintext at rest today; Phase 6 replaces it with WebAuthn-PRF
- *     encryption, which is why every persistent path is funnelled through
- *     this one class.
+ *   - `'persistent'` is opt-in and **never stores a bare token**. The token is
+ *     encrypted with a key derived from a passkey (see `PasskeyCipher`) and
+ *     only the ciphertext reaches IndexedDB. If a passkey cannot do it, the
+ *     app stays session-only rather than falling back to plaintext.
  *   - Every storage call is wrapped: `sessionStorage` and `indexedDB` both
  *     throw outright in some private-browsing modes, and a storage failure
  *     must never take the app down.
@@ -32,11 +32,23 @@
 
 export type Persistence = 'session' | 'persistent'
 
+import {
+  decryptWithPasskey,
+  encryptWithNewPasskey,
+  isPasskeyEncryptionAvailable,
+  PasskeyError,
+  type EncryptedToken,
+  type PasskeyFailure,
+} from './PasskeyCipher'
+
 const SESSION_KEY = 'gh-gantt:token'
 const DB_NAME = 'gh-gantt'
 const DB_VERSION = 1
 const STORE_NAME = 'auth'
-const DB_KEY = 'token'
+/** Ciphertext record. A bare token is never written under any key. */
+const DB_KEY = 'encrypted-token'
+/** Key used by builds before encryption existed; cleared on sight. */
+const LEGACY_DB_KEY = 'token'
 
 function openDb(): Promise<IDBDatabase | null> {
   return new Promise((resolve) => {
@@ -95,6 +107,7 @@ export class TokenStore {
     return this.token
   }
 
+  /** Hold the token for this tab. Persistence is a separate, explicit step. */
   set(token: string, persistence: Persistence = 'session'): void {
     this.token = token
     this.persistence = persistence
@@ -105,27 +118,72 @@ export class TokenStore {
       // Private mode or a full quota: memory still holds it for this session.
     }
 
-    if (persistence === 'persistent') {
-      void withStore('readwrite', (store) => store.put(token, DB_KEY))
-    } else {
-      void withStore('readwrite', (store) => store.delete(DB_KEY))
-    }
+    if (persistence === 'session') void this.forgetEncrypted()
   }
 
   /**
-   * Hydrate from IndexedDB at start-up. Call once before deciding whether the
-   * user needs to reconnect; `get()` cannot do this because IndexedDB is async.
+   * Encrypt the token with a new passkey and store only the ciphertext.
+   * Prompts the user twice — once to create the passkey, once to derive its
+   * key. Returns the reason on failure so the UI can say what happened; the
+   * session copy is untouched either way.
+   */
+  async remember(token: string, label: string): Promise<{ ok: true } | { ok: false; reason: PasskeyFailure; message: string }> {
+    try {
+      const record = await encryptWithNewPasskey(token, label)
+      const written = await withStore('readwrite', (store) => store.put(toStored(record), DB_KEY))
+      if (written === null) {
+        return { ok: false, reason: 'failed', message: 'This browser would not store the encrypted token.' }
+      }
+      this.persistence = 'persistent'
+      return { ok: true }
+    } catch (cause) {
+      const error = cause instanceof PasskeyError ? cause : null
+      return {
+        ok: false,
+        reason: error?.reason ?? 'failed',
+        message: error?.message ?? 'Encrypting the token with a passkey failed.',
+      }
+    }
+  }
+
+  /** Whether an encrypted token is waiting to be unlocked. */
+  async hasEncryptedToken(): Promise<boolean> {
+    const stored = await withStore<StoredRecord>('readonly', (store) => store.get(DB_KEY))
+    return stored !== null && typeof stored === 'object'
+  }
+
+  /**
+   * Decrypt the remembered token, prompting for the passkey. Deliberately
+   * *not* called on page load: it needs a user gesture, and a prompt nobody
+   * asked for is exactly the pattern this design is trying to avoid.
+   */
+  async unlock(): Promise<string | null> {
+    const stored = await withStore<StoredRecord>('readonly', (store) => store.get(DB_KEY))
+    if (!stored || typeof stored !== 'object') return null
+
+    const token = await decryptWithPasskey(fromStored(stored))
+    this.set(token, 'persistent')
+    this.persistence = 'persistent'
+    return token
+  }
+
+  /**
+   * Hydrate the session copy at start-up. Reads session storage only — an
+   * encrypted token is left for `unlock()`, behind a deliberate gesture.
    */
   async restore(): Promise<string | null> {
-    const current = this.get()
-    if (current) return current
+    // Clear any plaintext token left by a build that predates encryption.
+    void withStore('readwrite', (store) => store.delete(LEGACY_DB_KEY))
+    return this.get()
+  }
 
-    const stored = await withStore<string>('readonly', (store) => store.get(DB_KEY))
-    if (typeof stored === 'string' && stored.length > 0) {
-      this.set(stored, 'persistent')
-      return stored
-    }
-    return null
+  /** Whether this browser could offer passkey encryption at all. */
+  async canRemember(): Promise<boolean> {
+    return isPasskeyEncryptionAvailable()
+  }
+
+  private async forgetEncrypted(): Promise<void> {
+    await withStore('readwrite', (store) => store.delete(DB_KEY))
   }
 
   /** Whether the current token was stored to survive the tab closing. */
@@ -143,6 +201,36 @@ export class TokenStore {
       // Nothing to do: there was nothing readable to clear.
     }
     void withStore('readwrite', (store) => store.delete(DB_KEY))
+    void withStore('readwrite', (store) => store.delete(LEGACY_DB_KEY))
+  }
+}
+
+/**
+ * IndexedDB stores structured clones, and a `Uint8Array` view survives one, but
+ * plain arrays are cheaper to reason about across browser versions.
+ */
+interface StoredRecord {
+  credentialId: number[]
+  salt: number[]
+  iv: number[]
+  ciphertext: number[]
+}
+
+function toStored(record: EncryptedToken): StoredRecord {
+  return {
+    credentialId: [...record.credentialId],
+    salt: [...record.salt],
+    iv: [...record.iv],
+    ciphertext: [...record.ciphertext],
+  }
+}
+
+function fromStored(stored: StoredRecord): EncryptedToken {
+  return {
+    credentialId: new Uint8Array(stored.credentialId),
+    salt: new Uint8Array(stored.salt),
+    iv: new Uint8Array(stored.iv),
+    ciphertext: new Uint8Array(stored.ciphertext),
   }
 }
 

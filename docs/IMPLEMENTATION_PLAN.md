@@ -525,9 +525,9 @@ Add a view-mode switcher backed by `settings.ts`. Valid values are exactly: `'Ho
    - **Feature-detect at runtime.** `prf` support varies by browser *and* by authenticator, and fewer authenticators support it at credential-creation time than at assertion time.
    - If detection fails, fall back silently to session-only storage and tell the user persistence is unavailable.
    - Do not block the release on this. Ship session-only if it proves awkward.
-   - **Deferred in the build.** It cannot be exercised without a PRF-capable authenticator and a user-verification gesture, and an unexercised encryption routine in the one security-sensitive path is worse than the honest plaintext option with a warning beside it. `TokenStore` keeps every persistent write in one place so the swap stays small.
+   - **Built.** `adapters/storage/PasskeyCipher.ts` holds it, and it replaced the plaintext option outright rather than sitting beside it: "remember" now means encrypted or not at all. Enrol by creating the credential and then asserting once to derive the key — creation-time `prf` only reports `enabled`. Unlocking sits behind an explicit button, never on page load, so the biometric prompt is always one the user asked for. Tests drive the real HKDF and AES-GCM paths against a fake authenticator whose PRF output is deterministic in the salt, plus `fake-indexeddb` for the storage round trip; a real authenticator still needs a human.
 7. Add the Apache 2.0 short header to source files (the template in the LICENSE appendix). Not legally required, but conventional and cheap.
-8. Build and deploy to a static host. Set Vite's `base` correctly if serving from a subpath.
+8. Build and deploy to a static host. Set Vite's `base` correctly if serving from a subpath. **Not done, by decision (2026-09-18):** the repository is private and GitHub Pages needs a paid plan for private repos, so the host is still an open choice. `base` stays `'/'` until one is picked; a project-subpath host such as `tooward.github.io/gh-gantt/` needs `base: '/gh-gantt/'`.
 9. Write the real `README.md`: what it does, how to create a minimal-scope token, the date-resolution chain explained for users, and a clear statement that the token stays in the browser and is never sent anywhere but `api.github.com`.
 
 ### Acceptance criteria
@@ -536,7 +536,7 @@ Add a view-mode switcher backed by `settings.ts`. Valid values are exactly: `'Ho
 - `npm run build && npm run preview` serves a working app from the production bundle.
 - Manual: a repo with 200+ open issues pages in smoothly, with arrows correct across page boundaries.
 - Manual: reloading restores the last repo and settings but **requires the token again** (with "remember" off).
-- Deployed URL loads and functions.
+- Deployed URL loads and functions. *(Outstanding: no host chosen yet — see step 8.)*
 - Final check — must print nothing:
 
 ```bash

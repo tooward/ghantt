@@ -30,8 +30,14 @@ const remember = ref(false)
 // the whole point of the password-manager path is a deliberate gesture.
 async function onSubmit() {
   if (!token.value.trim()) return
-  await auth.connect(token.value, remember.value ? 'persistent' : 'session')
+  await auth.connect(token.value, remember.value, label.value.trim())
   token.value = ''
+}
+
+// Unlocking needs a click of its own: deriving the key prompts for the
+// passkey, and a prompt nobody asked for is the pattern to avoid.
+async function onUnlock() {
+  await auth.unlock()
 }
 </script>
 
@@ -42,6 +48,23 @@ async function onSubmit() {
       gh-gantt reads issues directly from your browser. Your token is sent only to
       <code class="rounded bg-gray-100 px-1">api.github.com</code> and never to any server of ours.
     </p>
+
+    <div
+      v-if="auth.hasRememberedToken"
+      class="mt-6 rounded border border-gray-300 bg-gray-50 p-4"
+    >
+      <p class="text-sm text-gray-700">
+        A token is remembered on this device, encrypted with a passkey.
+      </p>
+      <button
+        type="button"
+        :disabled="auth.status === 'connecting'"
+        class="mt-3 rounded bg-gray-900 px-4 py-2 text-white disabled:opacity-50"
+        @click="onUnlock"
+      >
+        {{ auth.status === 'connecting' ? 'Unlocking…' : 'Unlock with passkey' }}
+      </button>
+    </div>
 
     <form class="mt-6 space-y-4" @submit.prevent="onSubmit">
       <div>
@@ -77,17 +100,22 @@ async function onSubmit() {
         >
       </div>
 
-      <label class="flex items-start gap-2 text-sm text-gray-700">
+      <label v-if="auth.canRemember" class="flex items-start gap-2 text-sm text-gray-700">
         <input v-model="remember" type="checkbox" class="mt-1">
         <span>
-          Remember this token on this device.
+          Remember this token on this device, encrypted with a passkey.
           <span class="block text-xs text-gray-500">
-            Leave this off unless you need it — the token is then kept in browser storage, where
-            any script running on this page could read it. With it off, the token is forgotten when
-            you close the tab.
+            You will be asked to create a passkey and then to use it. Only the encrypted token is
+            stored, and unlocking it later needs your fingerprint, face or PIN — so a script on this
+            page cannot read it silently. With this off, the token is forgotten when you close the
+            tab.
           </span>
         </span>
       </label>
+      <p v-else class="text-xs text-gray-500">
+        This browser cannot encrypt a stored token with a passkey, so the token will be forgotten
+        when you close the tab.
+      </p>
 
       <button
         type="submit"
@@ -101,6 +129,7 @@ async function onSubmit() {
     <p v-if="auth.error" role="alert" class="mt-4 rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800">
       {{ auth.error }}
     </p>
+
 
     <div class="mt-8 rounded border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
       <h3 class="font-medium text-gray-900">Creating a token</h3>

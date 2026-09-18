@@ -24,7 +24,7 @@ import {
 } from '../../adapters/github/GitHubClient'
 
 export type { RateLimitInfo }
-import { tokenStore, type Persistence } from '../../adapters/storage/TokenStore'
+import { tokenStore } from '../../adapters/storage/TokenStore'
 
 export type AuthStatus = 'disconnected' | 'connecting' | 'connected' | 'error'
 
@@ -48,6 +48,12 @@ export const useAuthStore = defineStore('auth', () => {
   const user = shallowRef<Viewer | null>(null)
   const rateLimit = shallowRef<RateLimitInfo | null>(null)
   const error = ref<string | null>(null)
+  /** Set when "remember" was asked for but the passkey path could not deliver. */
+  const persistenceNotice = ref<string | null>(null)
+  /** An encrypted token is stored and can be unlocked with a passkey. */
+  const hasRememberedToken = ref(false)
+  /** This browser could plausibly encrypt with a passkey.  */
+  const canRemember = ref(false)
 
   const isConnected = computed(() => status.value === 'connected')
 
@@ -69,15 +75,19 @@ export const useAuthStore = defineStore('auth', () => {
     return 'Connecting to GitHub failed.'
   }
 
-  /** Store the token, then prove it works. A token that fails validation is discarded. */
-  async function connect(token: string, persistence: Persistence = 'session'): Promise<boolean> {
+  /**
+   * Store the token, then prove it works. A token that fails validation is
+   * discarded, and it is only ever encrypted for next time *after* it has
+   * proved itself.
+   */
+  async function connect(token: string, remember = false, label = ''): Promise<boolean> {
     status.value = 'connecting'
     error.value = null
-    tokenStore.set(token.trim(), persistence)
+    persistenceNotice.value = null
+    tokenStore.set(token.trim(), 'session')
 
     try {
       await validate()
-      return true
     } catch (cause) {
       tokenStore.clear()
       user.value = null
@@ -86,10 +96,58 @@ export const useAuthStore = defineStore('auth', () => {
       error.value = describe(cause)
       return false
     }
+
+    if (remember) {
+      const result = await tokenStore.remember(token.trim(), label || user.value?.login || '')
+      if (result.ok) {
+        hasRememberedToken.value = true
+      } else {
+        // Never silently downgrade to plaintext: stay session-only and say so.
+        persistenceNotice.value = `${result.message} The token will be forgotten when you close this tab.`
+      }
+    }
+
+    return true
   }
 
-  /** Re-establish a session from a remembered token, if there is one. Silent on failure. */
+  /** Decrypt a remembered token with its passkey, then validate it. */
+  async function unlock(): Promise<boolean> {
+    status.value = 'connecting'
+    error.value = null
+
+    let token: string | null
+    try {
+      token = await tokenStore.unlock()
+    } catch (cause) {
+      status.value = 'disconnected'
+      error.value = cause instanceof Error ? cause.message : 'Unlocking the remembered token failed.'
+      return false
+    }
+
+    if (!token) {
+      hasRememberedToken.value = false
+      status.value = 'disconnected'
+      return false
+    }
+
+    try {
+      await validate()
+      return true
+    } catch (cause) {
+      // A stored token that no longer works is worth clearing outright.
+      tokenStore.clear()
+      hasRememberedToken.value = false
+      status.value = 'error'
+      error.value = describe(cause)
+      return false
+    }
+  }
+
+  /** Re-establish this tab's session, and report what else is on offer. */
   async function restore(): Promise<boolean> {
+    canRemember.value = await tokenStore.canRemember()
+    hasRememberedToken.value = await tokenStore.hasEncryptedToken()
+
     const stored = await tokenStore.restore()
     if (!stored) return false
 
@@ -109,8 +167,23 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = null
     rateLimit.value = null
     error.value = null
+    persistenceNotice.value = null
+    hasRememberedToken.value = false
     status.value = 'disconnected'
   }
 
-  return { status, user, rateLimit, error, isConnected, connect, restore, disconnect }
+  return {
+    status,
+    user,
+    rateLimit,
+    error,
+    persistenceNotice,
+    hasRememberedToken,
+    canRemember,
+    isConnected,
+    connect,
+    unlock,
+    restore,
+    disconnect,
+  }
 })

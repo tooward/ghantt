@@ -283,7 +283,7 @@ Be precise about the limit of that benefit: **once a value is autofilled into th
 
 Default persistence stays **in-memory + `sessionStorage`**; the token dies with the tab. If persistence is offered, prefer the encrypted option below over storing a bare token.
 
-**Tier 3 — WebAuthn PRF encryption (optional, Phase 6+). NOT IMPLEMENTED — see the note at the end of this tier.**
+**Tier 3 — WebAuthn PRF encryption. BUILT in Phase 6 — see the note at the end of this tier.**
 
 The strongest option available to a backend-less app. Use the WebAuthn `prf` extension to derive a symmetric key from a passkey, encrypt the token with AES-GCM via WebCrypto, and store **only the ciphertext** in IndexedDB. MDN names this exact use case: deriving "a symmetric key for encrypting sensitive data... that can only be decrypted by a user who has the seed and the associated authenticator."
 
@@ -291,7 +291,17 @@ Why this is genuinely stronger: the key is never in storage, and decryption need
 
 Support for `prf` varies by browser *and* by authenticator (fewer authenticators support PRF at credential-creation time than at assertion time). **Feature-detect at runtime and fall back to session-only.** Never assume availability.
 
-**Status as built (Phase 6):** not implemented. The "remember this token" option stores the token in IndexedDB in plaintext, and the connect form says so in plain words. Tier 3 was deferred because it could not be verified in the build environment — a PRF-capable authenticator and a user-verification gesture are both required to exercise the path even once, and shipping an unexercised encryption routine in the one security-sensitive part of the app is worse than shipping the honest plaintext option beside a warning. `TokenStore` funnels every persistent write through one class so the swap stays small when someone can test it.
+**Status as built (Phase 6):** implemented in `adapters/storage/PasskeyCipher.ts`, and it is now the *only* way a token persists — the plaintext IndexedDB option was removed rather than kept as a fallback. If a passkey cannot do the job, the app stays session-only and says so; it never silently downgrades to plaintext at rest.
+
+How it goes together:
+
+- Enrolment creates a discoverable credential with `extensions: { prf: {} }`, then **asserts once immediately** to derive the key. Creation-time `prf` reports only `enabled`; the secret itself comes from an assertion, and fewer authenticators support PRF at creation than at assertion.
+- The PRF output is run through HKDF-SHA-256 with a per-record 32-byte salt and a fixed `info` string, so the same passkey used elsewhere yields a different key. The AES-GCM key is non-extractable.
+- Only `{ credentialId, salt, iv, ciphertext }` reaches IndexedDB.
+- Unlocking is behind an explicit "Unlock with passkey" button. `restore()` deliberately does **not** decrypt on page load: that would mean a biometric prompt nobody asked for, and the whole point of this tier is that the gesture is visible.
+- Every failure is classified (`unsupported` / `declined` / `no-prf` / `failed`) so the UI can say what happened, and no message can carry the token.
+
+**One portability trap worth recording.** Do not test a buffer from WebAuthn or WebCrypto with `instanceof ArrayBuffer`. Those values can arrive from another realm, where `instanceof` is `false` for a perfectly good ArrayBuffer — the code then takes a wrong branch and fails on a property that does not exist. `ArrayBuffer.isView()` and the `Uint8Array` constructor inspect internal slots instead and work across realms.
 
 **Rules that hold regardless of tier:**
 
