@@ -236,8 +236,10 @@ Requirements:
 - Grep check — must print nothing:
 
 ```bash
-cd ~/dev/gh-gantt && grep -rn "localStorage" src/ || echo "clean"
+cd ~/dev/gh-gantt && grep -rn "localStorage" src/ --exclude=SettingsStore.ts || echo "clean"
 ```
+
+  The exclusion is there from Phase 6 onwards: step 3 of that phase puts user *settings* in local storage, and `adapters/storage/SettingsStore.ts` is the only file allowed to touch it. Before Phase 6 the file does not exist and the check is the plain grep. The token must never appear there — `test/settings.test.ts` asserts it.
 
 ### Commit
 

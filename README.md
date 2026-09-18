@@ -45,7 +45,7 @@ A classic token also works — `public_repo` for public repositories, `repo` for
 - Ticking "remember this token on this device" encrypts it with a key derived from a **passkey** and stores only the ciphertext. You are asked to create a passkey, then to use it; getting the token back later needs your fingerprint, face or PIN, so a script on the page cannot read it silently. If your browser or authenticator cannot do this, the app stays session-only and tells you — it never falls back to storing a bare token.
 - Unlocking is an explicit "Unlock with passkey" button. The app never prompts for your passkey just because a page loaded.
 - The token is never written to local storage, never put in a URL, and is redacted from error messages.
-- "Disconnect" clears memory, session storage and the encrypted record.
+- "Disconnect" clears memory, session storage and the encrypted record. That is the only thing that forgets a remembered token: connecting with a different token and leaving "remember" unticked keeps the stored one, because re-enrolling costs a new passkey.
 
 The mechanism is the WebAuthn `prf` extension plus AES-GCM via WebCrypto — see `docs/ARCHITECTURE.md` §6, Tier 3.
 

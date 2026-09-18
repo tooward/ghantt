@@ -107,7 +107,14 @@ export class TokenStore {
     return this.token
   }
 
-  /** Hold the token for this tab. Persistence is a separate, explicit step. */
+  /**
+   * Hold the token for this tab. Persistence is a separate, explicit step —
+   * this deliberately touches nothing in IndexedDB. An un-awaited delete here
+   * would race the `put` in `remember()` against the same key, and connecting
+   * without "remember" would silently destroy an enrolled record (which costs
+   * a new passkey to recreate). Removing a remembered token is `forget()` or
+   * `clear()`, both of which the user asks for.
+   */
   set(token: string, persistence: Persistence = 'session'): void {
     this.token = token
     this.persistence = persistence
@@ -118,7 +125,6 @@ export class TokenStore {
       // Private mode or a full quota: memory still holds it for this session.
     }
 
-    if (persistence === 'session') void this.forgetEncrypted()
   }
 
   /**
@@ -182,7 +188,8 @@ export class TokenStore {
     return isPasskeyEncryptionAvailable()
   }
 
-  private async forgetEncrypted(): Promise<void> {
+  /** Drop the remembered token, leaving this tab's session alone. */
+  async forget(): Promise<void> {
     await withStore('readwrite', (store) => store.delete(DB_KEY))
   }
 

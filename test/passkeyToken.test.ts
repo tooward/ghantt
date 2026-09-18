@@ -62,16 +62,25 @@ class FakeAuthenticator {
   private async get(options: CredentialRequestOptions): Promise<unknown> {
     this.getCalls += 1
     const salt = options.publicKey?.extensions?.prf?.eval?.first as Uint8Array
-    // Deterministic in the salt, like a real PRF.
-    const digest = await crypto.subtle.digest(
-      'SHA-256',
-      new Uint8Array([...new TextEncoder().encode(this.secret), ...new Uint8Array(salt)]),
-    )
+    // No await anywhere in here: with nothing slow in the path, an ordering
+    // bug in the code under test shows up instead of being hidden behind a
+    // prompt that takes seconds in real life.
+    const prf = this.prf(new Uint8Array(salt))
     return {
       rawId: new TextEncoder().encode('credential-1').buffer,
       getClientExtensionResults: () =>
-        this.prfResultOnAssertion ? { prf: { results: { first: digest } } } : { prf: {} },
+        this.prfResultOnAssertion ? { prf: { results: { first: prf } } } : { prf: {} },
     }
+  }
+
+  /** Deterministic in the secret and the salt, which is the property that matters. */
+  private prf(salt: Uint8Array): Uint8Array {
+    const seed = new TextEncoder().encode(this.secret)
+    const out = new Uint8Array(32)
+    for (let i = 0; i < out.length; i += 1) {
+      out[i] = (seed[i % seed.length] * 31 + salt[i % salt.length] + i) % 256
+    }
+    return out
   }
 }
 
@@ -224,14 +233,38 @@ describe('TokenStore with passkey persistence', () => {
     expect(await store.hasEncryptedToken()).toBe(false)
   })
 
-  it('session persistence removes any remembered token', async () => {
+  // Holding a token for this tab must not touch the remembered record: an
+  // un-awaited delete in `set` would race the `put` in `remember`, and
+  // connecting without "remember" would destroy an enrolment that costs a new
+  // passkey to recreate.
+  it('holding a session token leaves a remembered token alone', async () => {
     const store = new TokenStore()
     await store.remember(TOKEN, 'octocat')
 
     store.set(TOKEN, 'session')
-    await new Promise((resolve) => setTimeout(resolve, 10))
+
+    expect(await store.hasEncryptedToken()).toBe(true)
+  })
+
+  it('keeps the enrolled record when enrolment resolves immediately', async () => {
+    const store = new TokenStore()
+
+    store.set(TOKEN, 'session')
+    const result = await store.remember(TOKEN, 'octocat')
+
+    expect(result.ok).toBe(true)
+    expect(await store.hasEncryptedToken()).toBe(true)
+  })
+
+  it('forget drops the remembered token but keeps this tab connected', async () => {
+    const store = new TokenStore()
+    store.set(TOKEN, 'session')
+    await store.remember(TOKEN, 'octocat')
+
+    await store.forget()
 
     expect(await store.hasEncryptedToken()).toBe(false)
+    expect(store.get()).toBe(TOKEN)
   })
 
   it('clear wipes memory, session storage and the encrypted record', async () => {
