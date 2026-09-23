@@ -24,8 +24,6 @@ function inputs(overrides: Partial<DateInputs> = {}): DateInputs {
   return {
     fieldStart: null,
     fieldDue: null,
-    bodyStart: null,
-    bodyDue: null,
     milestoneDue: null,
     createdAt: '2026-01-10T09:00:00Z',
     ...overrides,
@@ -41,7 +39,6 @@ describe('resolveDates — start chain', () => {
     const { start } = resolveDates(
       inputs({
         fieldStart: '2026-02-01',
-        bodyStart: new Date('2026-03-01T00:00:00Z'),
         milestoneDue: '2026-04-01',
       }),
       cfg,
@@ -50,22 +47,13 @@ describe('resolveDates — start chain', () => {
     expect(day(start)).toBe('2026-02-01')
   })
 
-  it('rung 2: the body date wins when there is no field', () => {
-    const { start } = resolveDates(
-      inputs({ bodyStart: new Date('2026-03-01T00:00:00Z'), milestoneDue: '2026-04-01' }),
-      cfg,
-    )
-
-    expect(day(start)).toBe('2026-03-01')
-  })
-
-  it('rung 3: milestone due minus the default duration', () => {
+  it('rung 2: milestone due minus the default duration', () => {
     const { start } = resolveDates(inputs({ milestoneDue: '2026-04-10T00:00:00Z' }), { defaultTaskDays: 3 })
 
     expect(day(start)).toBe('2026-04-07')
   })
 
-  it('rung 4: createdAt when nothing else is present', () => {
+  it('rung 3: createdAt when nothing else is present', () => {
     const { start } = resolveDates(inputs(), cfg)
 
     expect(day(start)).toBe('2026-01-10')
@@ -78,7 +66,6 @@ describe('resolveDates — due chain', () => {
       inputs({
         fieldStart: '2026-02-01T00:00:00Z',
         fieldDue: '2026-02-20',
-        bodyDue: new Date('2026-03-20T00:00:00Z'),
         milestoneDue: '2026-04-20',
       }),
       cfg,
@@ -87,26 +74,13 @@ describe('resolveDates — due chain', () => {
     expect(day(due)).toBe('2026-02-20')
   })
 
-  it('rung 2: the body date beats the milestone', () => {
-    const { due } = resolveDates(
-      inputs({
-        fieldStart: '2026-03-01T00:00:00Z',
-        bodyDue: new Date('2026-03-20T00:00:00Z'),
-        milestoneDue: '2026-04-20T00:00:00Z',
-      }),
-      cfg,
-    )
-
-    expect(day(due)).toBe('2026-03-20')
-  })
-
-  it('rung 3: the milestone due date', () => {
+  it('rung 2: the milestone due date', () => {
     const { due } = resolveDates(inputs({ fieldStart: '2026-04-01', milestoneDue: '2026-04-20T00:00:00Z' }), cfg)
 
     expect(day(due)).toBe('2026-04-20')
   })
 
-  it('rung 4: start plus the default duration', () => {
+  it('rung 3: start plus the default duration', () => {
     const { start, due } = resolveDates(inputs({ fieldStart: '2026-04-01T00:00:00Z' }), { defaultTaskDays: 5 })
 
     expect(day(start)).toBe('2026-04-01')
@@ -192,7 +166,7 @@ describe('resolveDates — clamping', () => {
 
 describe('resolveDates — the personal-repo case', () => {
   // Issue fields are organisation-level: a personal repo returns none at all.
-  it('still produces valid dates with no fields, no body dates and no milestone', () => {
+  it('still produces valid dates with no fields and no milestone', () => {
     const { start, due, warnings } = resolveDates(inputs(), cfg)
 
     expect(day(start)).toBe('2026-01-10')

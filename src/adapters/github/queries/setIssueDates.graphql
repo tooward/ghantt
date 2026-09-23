@@ -1,0 +1,7 @@
+# Sets one or both date fields in a single call. Returns the issue as GitHub
+# now holds it. A mutation cannot select rateLimit (a root Query field).
+mutation SetIssueDates($issueId: ID!, $fields: [IssueFieldCreateOrUpdateInput!]!) {
+  setIssueFieldValue(input: {issueId: $issueId, issueFields: $fields}) {
+    issue { ...BoardIssue }
+  }
+}

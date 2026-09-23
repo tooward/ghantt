@@ -22,14 +22,18 @@
  */
 
 export interface GitHubIssueFieldValueNode {
-  /** The union discriminator. Only `IssueFieldDateValue` carries dates. */
+  /** The union discriminator. Text and multi-select values carry nothing we read. */
   __typename: string
-  /** A String, even on a date field. Present only on the date variant. */
+  /** `IssueFieldDateValue` only. A String, even on a date field. */
   value?: string | null
   /**
-   * The query spreads `... on IssueFieldDate { name }` only, so a date value
-   * backed by some other field type yields an object with no `name`.
+   * `IssueFieldNumberValue` only, aliased from `value`: GraphQL rejects one
+   * response key with different types (String vs Float) across fragments.
    */
+  numberValue?: number | null
+  /** `IssueFieldSingleSelectValue` only, aliased from `name`: the chosen option. */
+  optionName?: string | null
+  /** Each fragment spreads only its own field type, so a mismatch yields no `name`. */
   field?: { name?: string | null } | null
 }
 
@@ -41,6 +45,9 @@ export interface GitHubMilestone {
 export interface GitHubIssueRef {
   id: string
   number: number
+  title: string
+  state: 'OPEN' | 'CLOSED'
+  repository: { nameWithOwner: string } | null
 }
 
 export interface GitHubIssueNode {
@@ -49,11 +56,17 @@ export interface GitHubIssueNode {
   title: string
   url: string
   createdAt: string
-  body: string | null
+  repository: { nameWithOwner: string } | null
+  /**
+   * Whether the *user* may set issue fields here. It says nothing about the
+   * token: a read-only token still reports true, then fails on save.
+   */
+  viewerCanSetFields?: boolean | null
   milestone: GitHubMilestone | null
   /** Empty on personal-account repositories: issue fields are organisation-level. */
   issueFieldValues: { nodes: GitHubIssueFieldValueNode[] | null } | null
   blockedBy: { nodes: GitHubIssueRef[] | null } | null
+  blocking?: { nodes: GitHubIssueRef[] | null } | null
 }
 
 export interface GitHubPageInfo {
@@ -68,5 +81,26 @@ export interface BoardIssuesResponse {
       totalCount: number
       nodes: (GitHubIssueNode | null)[] | null
     }
+    /** Null where issue types are unavailable, e.g. some personal repositories. */
+    issueTypes?: { nodes: ({ name: string } | null)[] | null } | null
   } | null
+}
+
+export interface RepoDateFieldsResponse {
+  repository: {
+    issueFields: {
+      /** Only `IssueFieldDate` members carry `id` and `name`; the rest are `{ __typename }`. */
+      nodes: ({ __typename: string; id?: string; name?: string } | null)[] | null
+    } | null
+  } | null
+}
+
+export interface SetIssueDatesResponse {
+  setIssueFieldValue: { issue: GitHubIssueNode | null } | null
+}
+
+/** Both mutations answer alike: the blocked issue and its blocker, as GitHub now holds them. */
+export interface BlockedByResponse {
+  addBlockedBy?: { issue: GitHubIssueNode | null; blockingIssue: GitHubIssueNode | null } | null
+  removeBlockedBy?: { issue: GitHubIssueNode | null; blockingIssue: GitHubIssueNode | null } | null
 }

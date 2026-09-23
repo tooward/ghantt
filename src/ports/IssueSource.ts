@@ -21,13 +21,17 @@ export interface IssuePage {
   /** Cursor to pass as `cursor` for the next page; null when there is none. */
   endCursor: string | null
   hasNextPage: boolean
-  /** Total open issues in the repository, for a "43 of 210" indicator. */
+  /** Total open issues matching the filter, for a "43 of 210" indicator. */
   totalCount: number
+  /** The issue types the repository offers, for suggesting a filter. */
+  issueTypes: string[]
 }
 
 export interface RepoRef {
   owner: string
   name: string
+  /** Only issues of this type (e.g. "Feature"), matched case-insensitively. Absent or null: every type. */
+  issueType?: string | null
 }
 
 /**

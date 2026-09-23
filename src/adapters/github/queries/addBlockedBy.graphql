@@ -1,0 +1,8 @@
+# Link or unlink "issue is blocked by blockingIssue". Both issues come back,
+# so each side's lists (and the chart's arrows) update from GitHub's answer.
+mutation AddBlockedBy($issueId: ID!, $blockingIssueId: ID!) {
+  addBlockedBy(input: {issueId: $issueId, blockingIssueId: $blockingIssueId}) {
+    issue { ...BoardIssue }
+    blockingIssue { ...BoardIssue }
+  }
+}

@@ -562,3 +562,15 @@ cd ~/dev/gh-gantt && grep -rniE "gh[pousr]_[A-Za-z0-9]{16,}" . --exclude-dir=nod
 | 4 | Chart renders | frappe API differs from memory; deep reactivity |
 | 5 | Dependency arrows | Dangling edges crash the chart |
 | 6 | Pagination, deploy | Edges spanning page boundaries |
+
+---
+
+# Backlog — agreed, not yet scheduled
+
+Recorded 2026-09-23. Schema facts behind these are in ARCHITECTURE.md §5.2.
+
+- **Status colours on bars.** Bars are a single light green today, on purpose: colour is being kept free so it can carry status later (e.g. not started / in progress / blocked / done). Decide the status source (an issue field, a label, or open/closed plus blockers) before choosing colours, and keep the warned-bar amber distinct from every status colour.
+- **End date from Effort.** When `End` is empty, compute it as `Start` + the duration Effort maps to, ahead of the milestone rung; the same rule run backwards gives Start from End. Open questions: whether Effort is a number or a single select, what each value means in days, and working days versus calendar days.
+- **Feature-only filter.** Pass `filterBy: { type: "Feature" }` so only roadmap items load; make the types a setting.
+- **Editing from the chart.** *Done 2026-09-23:* Start/End edited in the detail panel with Save, via `setIssueFieldValue`; field ids from a separate `repoDateFields` query; read-only wording rewritten. *Done 2026-09-23:* Blocked by / Blocks lists in the panel with add (picker over loaded issues, loop check first) and confirm-to-remove, via `addBlockedBy` / `removeBlockedBy`. *Next:* pick an issue that is not loaded by typing `#123` or pasting an issue URL — one lookup when chosen, never per keystroke; needed because a Feature-only board cannot offer Tasks or Bugs as blockers. *Later:* dragging bars to change dates (optimistic update with rollback).
+- **Warn on unmatched field names.** When an issue has date fields but none match the configured names, say so on the bar instead of silently falling back to the creation date.

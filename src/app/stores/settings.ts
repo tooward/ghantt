@@ -27,6 +27,8 @@ export interface Settings extends MapConfig {
   /** Last repository loaded, so a reload lands where the user left off. */
   lastOwner: string
   lastRepo: string
+  /** Issue type to chart; empty means every type. */
+  issueType: string
 }
 
 const DEFAULTS: Settings = {
@@ -35,6 +37,7 @@ const DEFAULTS: Settings = {
   pageSize: 50,
   lastOwner: '',
   lastRepo: '',
+  issueType: 'Feature',
 }
 
 const VIEW_MODES: ViewMode[] = ['Day', 'Week', 'Month']
@@ -42,7 +45,7 @@ const VIEW_MODES: ViewMode[] = ['Day', 'Week', 'Month']
 /** Stored settings are user-editable text; take only what is the right shape. */
 function sanitise(stored: Partial<Settings>): Partial<Settings> {
   const clean: Partial<Settings> = {}
-  for (const key of ['startFieldName', 'dueFieldName', 'startPrefix', 'duePrefix', 'lastOwner', 'lastRepo'] as const) {
+  for (const key of ['startFieldName', 'dueFieldName', 'effortFieldName', 'lastOwner', 'lastRepo', 'issueType'] as const) {
     if (typeof stored[key] === 'string') clean[key] = stored[key]
   }
   if (typeof stored.defaultTaskDays === 'number' && stored.defaultTaskDays > 0) {
@@ -70,8 +73,7 @@ export const useSettingsStore = defineStore('settings', () => {
     return {
       startFieldName: settings.startFieldName,
       dueFieldName: settings.dueFieldName,
-      startPrefix: settings.startPrefix,
-      duePrefix: settings.duePrefix,
+      effortFieldName: settings.effortFieldName,
       defaultTaskDays: settings.defaultTaskDays,
     }
   }

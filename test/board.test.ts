@@ -16,9 +16,11 @@
 
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { AuthError } from '../src/adapters/github/GitHubClient'
 import { useBoardStore } from '../src/app/stores/board'
 import type { Task, TaskId } from '../src/domain/Task'
 import type { IssuePage, IssueSource, RepoRef } from '../src/ports/IssueSource'
+import type { DateField, DateFieldValue, IssueWriter } from '../src/ports/IssueWriter'
 
 function task(id: TaskId, dependsOn: TaskId[] = []): Task {
   return {
@@ -29,6 +31,10 @@ function task(id: TaskId, dependsOn: TaskId[] = []): Task {
     start: new Date('2026-01-01T00:00:00Z'),
     due: new Date('2026-01-02T00:00:00Z'),
     dependsOn,
+    blockers: [],
+    blocking: [],
+    effort: null,
+    canSetFields: true,
     warnings: [],
   }
 }
@@ -48,6 +54,56 @@ class FakeSource implements IssueSource {
   }
 }
 
+/** Records writes and answers with the task as the forge would return it. */
+class FakeWriter implements IssueWriter {
+  writes: Array<{ issueId: TaskId; values: DateFieldValue[] }> = []
+  failWith: Error | null = null
+
+  constructor(private readonly fields: DateField[] = [
+    { id: 'F_start', name: 'Start' },
+    { id: 'F_end', name: 'End' },
+  ]) {}
+
+  async dateFields(): Promise<DateField[]> {
+    return this.fields
+  }
+
+  links: Array<{ op: 'add' | 'remove'; issueId: TaskId; blockerId: TaskId }> = []
+
+  async addBlockedBy(issueId: TaskId, blockerId: TaskId): Promise<Task[]> {
+    return this.link('add', issueId, blockerId)
+  }
+
+  async removeBlockedBy(issueId: TaskId, blockerId: TaskId): Promise<Task[]> {
+    return this.link('remove', issueId, blockerId)
+  }
+
+  /** Answers like GitHub: both issues, with the link applied to each side. */
+  private link(op: 'add' | 'remove', issueId: TaskId, blockerId: TaskId): Task[] {
+    this.links.push({ op, issueId, blockerId })
+    if (this.failWith) throw this.failWith
+    const blocked = task(issueId, op === 'add' ? [blockerId] : [])
+    const blocker = task(blockerId)
+    const ref = (t: Task) => ({ id: t.id, number: t.number, title: t.title, closed: false, repository: null })
+    if (op === 'add') {
+      blocked.blockers = [ref(blocker)]
+      blocker.blocking = [ref(blocked)]
+    }
+    return [blocked, blocker]
+  }
+
+  async setDates(issueId: TaskId, values: DateFieldValue[]): Promise<Task> {
+    this.writes.push({ issueId, values })
+    if (this.failWith) throw this.failWith
+    const updated = task(issueId)
+    for (const value of values) {
+      if (value.fieldId === 'F_start') updated.start = new Date(`${value.date}T00:00:00`)
+      if (value.fieldId === 'F_end') updated.due = new Date(`${value.date}T00:00:00`)
+    }
+    return updated
+  }
+}
+
 class FailingSource implements IssueSource {
   async fetchPage(): Promise<IssuePage> {
     throw new Error('Repository acme/nope was not found, or the token cannot see it.')
@@ -59,6 +115,7 @@ const pageOf = (tasks: Task[], next: string | null, totalCount: number): IssuePa
   endCursor: next,
   hasNextPage: next !== null,
   totalCount,
+  issueTypes: ['Task', 'Bug', 'Feature'],
 })
 
 beforeEach(() => {
@@ -66,6 +123,28 @@ beforeEach(() => {
 })
 
 describe('board store', () => {
+  it('passes the issue type filter to the source, and keeps it when paging', async () => {
+    const board = useBoardStore()
+    const source = new FakeSource([pageOf([task('a')], '1', 2), pageOf([task('b')], null, 2)])
+    board.useSource(source)
+
+    await board.loadRepo('acme', 'widgets', ' Feature ')
+    await board.loadMore()
+
+    expect(source.calls.map((call) => call.repo.issueType)).toEqual(['Feature', 'Feature'])
+    expect(board.issueTypes).toEqual(['Task', 'Bug', 'Feature'])
+  })
+
+  it('treats a blank issue type as no filter', async () => {
+    const board = useBoardStore()
+    const source = new FakeSource([pageOf([task('a')], null, 1)])
+    board.useSource(source)
+
+    await board.loadRepo('acme', 'widgets', '  ')
+
+    expect(source.calls[0].repo.issueType).toBeNull()
+  })
+
   it('loads a repository and exposes a renderable graph', async () => {
     const board = useBoardStore()
     board.useSource(new FakeSource([pageOf([task('a'), task('b', ['a'])], null, 2)]))
@@ -158,7 +237,7 @@ describe('board store', () => {
     await board.loadRepo('acme', 'gadgets')
 
     expect(board.tasks).toHaveLength(1)
-    expect(board.repo).toEqual({ owner: 'acme', name: 'gadgets' })
+    expect(board.repo).toEqual({ owner: 'acme', name: 'gadgets', issueType: null })
   })
 
   it('does not page past the end', async () => {
@@ -214,5 +293,146 @@ describe('board store at board scale', () => {
 
     expect(board.graph.brokenCycles).toBe(1)
     expect(board.graph.tasks.flatMap((t) => t.dependsOn)).toHaveLength(1)
+  })
+
+  describe('saving dates', () => {
+    async function boardWith(writer: FakeWriter) {
+      const board = useBoardStore()
+      board.useSource(new FakeSource([pageOf([task('a'), task('b', ['a']), task('c')], null, 3)]))
+      board.useWriter(writer)
+      await board.loadRepo('acme', 'widgets')
+      await Promise.resolve()
+      return board
+    }
+
+    it('looks up the date fields beside the board and makes both dates editable', async () => {
+      const board = await boardWith(new FakeWriter())
+
+      expect(board.dateFields.map((field) => field.name)).toEqual(['Start', 'End'])
+      expect(board.dateEditability).toEqual({ start: null, due: null })
+    })
+
+    it('says which date cannot be edited when a field is missing', async () => {
+      const board = await boardWith(new FakeWriter([{ id: 'F_start', name: 'start' }]))
+
+      expect(board.dateEditability.start).toBeNull()
+      expect(board.dateEditability.due).toBe('This repository has no date field named “End”.')
+    })
+
+    it('writes only the changed field, by its id, and replaces the task in place', async () => {
+      const writer = new FakeWriter()
+      const board = await boardWith(writer)
+
+      expect(await board.saveDates('b', { due: '2026-03-01' })).toBeNull()
+
+      expect(writer.writes).toEqual([{ issueId: 'b', values: [{ fieldId: 'F_end', date: '2026-03-01' }] }])
+      expect(board.tasks.map((t) => t.id)).toEqual(['a', 'b', 'c'])
+      expect(board.tasks[1].due.getMonth()).toBe(2)
+    })
+
+    it('sends both fields in one write when both changed', async () => {
+      const writer = new FakeWriter()
+      const board = await boardWith(writer)
+
+      await board.saveDates('a', { start: '2026-02-01', due: '2026-02-10' })
+
+      expect(writer.writes).toHaveLength(1)
+      expect(writer.writes[0].values.map((v) => v.fieldId)).toEqual(['F_start', 'F_end'])
+    })
+
+    it('turns a permission error into a write-access message without disconnecting', async () => {
+      const writer = new FakeWriter()
+      writer.failWith = new AuthError('Resource not accessible by personal access token')
+      const board = await boardWith(writer)
+
+      const message = await board.saveDates('a', { start: '2026-02-01' })
+
+      expect(message).toContain('Issues: Read and write')
+      expect(message).toContain('Resource not accessible by personal access token')
+      expect(board.tasks).toHaveLength(3)
+      expect(board.error).toBeNull()
+    })
+
+    it('refuses to write a date whose field does not exist', async () => {
+      const writer = new FakeWriter([{ id: 'F_start', name: 'Start' }])
+      const board = await boardWith(writer)
+
+      expect(await board.saveDates('a', { due: '2026-02-10' })).toContain('no date field named “End”')
+      expect(writer.writes).toEqual([])
+    })
+
+    it('is read-only when the source cannot write', async () => {
+      const board = useBoardStore()
+      board.useSource(new FakeSource([pageOf([task('a')], null, 1)]))
+      await board.loadRepo('acme', 'widgets')
+
+      expect(board.dateEditability.start).toBe('Editing is not available.')
+      expect(await board.saveDates('a', { start: '2026-02-01' })).toBe('Editing is not available.')
+    })
+  })
+
+  describe('blocking links', () => {
+    async function boardWith(writer: FakeWriter) {
+      const board = useBoardStore()
+      // c is blocked by b; a stands alone.
+      board.useSource(new FakeSource([pageOf([task('a'), task('b'), task('c', ['b'])], null, 3)]))
+      board.useWriter(writer)
+      await board.loadRepo('acme', 'widgets')
+      return board
+    }
+
+    it('links a blocker and updates both issues in place', async () => {
+      const writer = new FakeWriter()
+      const board = await boardWith(writer)
+
+      expect(await board.linkBlocker('a', 'b')).toBeNull()
+
+      expect(writer.links).toEqual([{ op: 'add', issueId: 'a', blockerId: 'b' }])
+      expect(board.tasks.map((t) => t.id)).toEqual(['a', 'b', 'c'])
+      expect(board.tasks[0].dependsOn).toEqual(['b'])
+      expect(board.tasks[1].blocking.map((l) => l.id)).toEqual(['a'])
+      // The arrow appears straight away.
+      expect(board.graph.tasks[0].dependsOn).toEqual(['b'])
+    })
+
+    it('refuses a link that would loop, without asking GitHub', async () => {
+      const writer = new FakeWriter()
+      const board = await boardWith(writer)
+
+      const message = await board.linkBlocker('b', 'c')
+
+      expect(message).toContain('loop')
+      expect(writer.links).toEqual([])
+    })
+
+    it('unlinks', async () => {
+      const writer = new FakeWriter()
+      const board = await boardWith(writer)
+
+      expect(await board.unlinkBlocker('c', 'b')).toBeNull()
+
+      expect(writer.links).toEqual([{ op: 'remove', issueId: 'c', blockerId: 'b' }])
+      expect(board.tasks[2].dependsOn).toEqual([])
+    })
+
+    it('explains a read-only token rather than disconnecting', async () => {
+      const writer = new FakeWriter()
+      writer.failWith = new AuthError('Resource not accessible by personal access token')
+      const board = await boardWith(writer)
+
+      expect(await board.linkBlocker('a', 'b')).toContain('Issues: Read and write')
+      expect(board.tasks[0].dependsOn).toEqual([])
+      expect(board.error).toBeNull()
+    })
+
+    it('ignores a returned issue that is not on the board', async () => {
+      const board = await boardWith(new FakeWriter())
+
+      // "z" is, say, a Task while the board shows Features.
+      expect(await board.linkBlocker('a', 'z')).toBeNull()
+
+      expect(board.tasks.map((t) => t.id)).toEqual(['a', 'b', 'c'])
+      expect(board.tasks[0].dependsOn).toEqual(['z'])
+    })
   })
 })

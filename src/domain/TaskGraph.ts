@@ -108,3 +108,24 @@ export function detectAndBreakCycles(tasks: Task[]): CycleResult {
 
   return { tasks: withCyclesBroken, brokenEdges }
 }
+
+/**
+ * Whether recording "`blockedId` is blocked by `blockerId`" would close a loop
+ * among these tasks: true when the blocker already depends on the blocked
+ * task, directly or through others (or they are the same task). Only sees
+ * what is loaded; GitHub has the final say on anything beyond it.
+ */
+export function wouldCreateCycle(tasks: Task[], blockedId: TaskId, blockerId: TaskId): boolean {
+  if (blockedId === blockerId) return true
+  const byId = new Map(tasks.map((task) => [task.id, task]))
+  const seen = new Set<TaskId>()
+  const stack = [blockerId]
+  while (stack.length > 0) {
+    const id = stack.pop()!
+    if (id === blockedId) return true
+    if (seen.has(id)) continue
+    seen.add(id)
+    stack.push(...(byId.get(id)?.dependsOn ?? []))
+  }
+  return false
+}

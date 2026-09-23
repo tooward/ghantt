@@ -105,7 +105,7 @@ async function onUnlock() {
         <span>
           Remember this token on this device, encrypted with a passkey.
           <span class="block text-xs text-gray-500">
-            You will be asked to create a passkey and then to use it. Only the encrypted token is
+            You will be asked to create a passkey, and possibly to use it once more. Only the encrypted token is
             stored, and unlocking it later needs your fingerprint, face or PIN — so a script on this
             page cannot read it silently. With this off, the token is forgotten when you close the
             tab.
@@ -141,12 +141,15 @@ async function onUnlock() {
           target="_blank"
           rel="noopener noreferrer"
         >fine-grained personal access token</a>
-        with read-only access to the repository you want to chart.
+        with access to the repository you want to chart.
       </p>
       <ul class="mt-2 list-disc space-y-1 pl-5">
-        <li>Repository permissions → <strong>Issues: Read-only</strong></li>
+        <li>
+          Repository permissions → <strong>Issues: Read and write</strong> to change dates from the chart, or
+          <strong>Read-only</strong> just to view it
+        </li>
         <li>Repository permissions → <strong>Metadata: Read-only</strong></li>
-        <li>Nothing else. This app never writes to GitHub.</li>
+        <li>Nothing else. The app only ever changes issue date fields.</li>
         <li>Set an expiry of <strong>90 days or less</strong>.</li>
       </ul>
     </div>

@@ -21,6 +21,8 @@ const TOKEN_SHAPED = /\b(gh[pousr]_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{20,}
 
 export interface RateLimitInfo {
   cost: number
+  /** The hourly budget. Optional: responses captured before it was queried lack it. */
+  limit?: number
   remaining: number
   resetAt: string
 }
@@ -87,9 +89,14 @@ function rateLimitOf(data: unknown): RateLimitInfo | undefined {
   if (typeof data !== 'object' || data === null) return undefined
   const candidate = (data as { rateLimit?: unknown }).rateLimit
   if (typeof candidate !== 'object' || candidate === null) return undefined
-  const { cost, remaining, resetAt } = candidate as Partial<RateLimitInfo>
+  const { cost, limit, remaining, resetAt } = candidate as Partial<RateLimitInfo>
   if (typeof remaining !== 'number' || typeof resetAt !== 'string') return undefined
-  return { cost: typeof cost === 'number' ? cost : 0, remaining, resetAt }
+  return {
+    cost: typeof cost === 'number' ? cost : 0,
+    ...(typeof limit === 'number' && limit > 0 ? { limit } : {}),
+    remaining,
+    resetAt,
+  }
 }
 
 /**

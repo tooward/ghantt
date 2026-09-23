@@ -21,8 +21,6 @@ export interface DateInputs {
   fieldStart: string | null
   /** Raw string from a configured due date field. */
   fieldDue: string | null
-  bodyStart: Date | null
-  bodyDue: Date | null
   milestoneDue: string | null
   /** Always present on a GitHub issue — the last rung of the chain. */
   createdAt: string
@@ -44,18 +42,20 @@ export const DEFAULT_TASK_DAYS = 1
  * Turn whatever dates an issue happens to carry into a start and a due date
  * (ARCHITECTURE.md §5.3). First match wins on each chain.
  *
- * Start: date field -> body `GanttStart:` -> the resolved due date minus the
- * default duration -> `createdAt`.
+ * Start: date field -> the resolved due date minus the default duration ->
+ * `createdAt`.
  *
- * Rung 3 deviates slightly from ARCHITECTURE.md §5.3, which names the
+ * Rung 2 deviates slightly from ARCHITECTURE.md §5.3, which names the
  * milestone due date specifically. Backing off from whichever due date won
  * gives the same answer when the milestone is the only source, and avoids a
  * bad case the narrower rule produces: an issue with an explicit due date, no
  * start, and a later milestone would take its start from the milestone, land
  * after its own due date, and have that explicit due date thrown away by the
  * clamp below.
- * Due:   date field -> body `GanttDue:` -> milestone due -> start plus the
- * default duration.
+ * Due:   date field -> milestone due -> start plus the default duration.
+ *
+ * Issue body lines (`GanttStart:` / `GanttDue:`) were once a rung here too.
+ * They were removed as fragile once organisation issue fields existed.
  *
  * This function always returns two valid dates and never throws. Anything it
  * could not use is reported in `warnings` rather than silently dropped — a
@@ -74,11 +74,10 @@ export function resolveDates(i: DateInputs, cfg: DateResolutionConfig): Resolved
 
   // The due candidate is resolved first because rung 3 of the start chain is
   // defined in terms of it.
-  const dueCandidate = fieldDue ?? i.bodyDue ?? milestoneDue
+  const dueCandidate = fieldDue ?? milestoneDue
 
   const start =
     fieldStart ??
-    i.bodyStart ??
     // Only reachable when something gives a due date but nothing gives a start.
     (dueCandidate ? subDays(dueCandidate, days) : null) ??
     createdAt ??

@@ -24,7 +24,7 @@ import {
 } from '../../adapters/github/GitHubClient'
 
 export type { RateLimitInfo }
-import { tokenStore } from '../../adapters/storage/TokenStore'
+import { tokenStore, type RememberResult } from '../../adapters/storage/TokenStore'
 
 export type AuthStatus = 'disconnected' | 'connecting' | 'connected' | 'error'
 
@@ -33,7 +33,7 @@ export interface Viewer {
   avatarUrl: string
 }
 
-const VIEWER_QUERY = `query { viewer { login avatarUrl } rateLimit { remaining resetAt } }`
+const VIEWER_QUERY = `query { viewer { login avatarUrl } rateLimit { limit remaining resetAt } }`
 
 interface ViewerResponse {
   viewer: Viewer
@@ -50,6 +50,8 @@ export const useAuthStore = defineStore('auth', () => {
   const error = ref<string | null>(null)
   /** Set when "remember" was asked for but the passkey path could not deliver. */
   const persistenceNotice = ref<string | null>(null)
+  /** A passkey was created but still has to be used once to finish remembering. */
+  const pendingPasskey = ref(false)
   /** An encrypted token is stored and can be unlocked with a passkey. */
   const hasRememberedToken = ref(false)
   /** This browser could plausibly encrypt with a passkey.  */
@@ -98,16 +100,50 @@ export const useAuthStore = defineStore('auth', () => {
     }
 
     if (remember) {
-      const result = await tokenStore.remember(token.trim(), label || user.value?.login || '')
-      if (result.ok) {
-        hasRememberedToken.value = true
-      } else {
-        // Never silently downgrade to plaintext: stay session-only and say so.
-        persistenceNotice.value = `${result.message} The token will be forgotten when you close this tab.`
-      }
+      applyRememberResult(await tokenStore.remember(token.trim(), label || user.value?.login || ''))
     }
 
     return true
+  }
+
+  function applyRememberResult(result: RememberResult): void {
+    pendingPasskey.value = result.status === 'pending'
+    if (result.status === 'saved') {
+      hasRememberedToken.value = true
+      persistenceNotice.value = null
+    } else if (result.status === 'pending') {
+      persistenceNotice.value = 'Your passkey was created. Use it once more to finish encrypting the token.'
+    } else {
+      // Never silently downgrade to plaintext: stay session-only and say so.
+      persistenceNotice.value = `${result.message} The token will be forgotten when you close this tab.`
+    }
+  }
+
+  /** Use the pending passkey to finish remembering. Call from a click: it prompts. */
+  async function finishRemember(): Promise<void> {
+    const result = await tokenStore.finishRemember()
+    if (result.status === 'failed' && result.reason === 'declined') {
+      // Still pending: the same passkey can be tried again.
+      pendingPasskey.value = true
+      persistenceNotice.value =
+        'The passkey was not used, so the token is not saved yet. Try again, or dismiss this and delete the unused gh-gantt passkey from your password manager.'
+      return
+    }
+    if (result.status === 'failed') {
+      applyRememberResult({
+        ...result,
+        message: `${result.message} You can delete the unused gh-gantt passkey from your password manager.`,
+      })
+      return
+    }
+    applyRememberResult(result)
+  }
+
+  /** Dismiss the notice, abandoning any pending enrolment. */
+  function dismissPersistenceNotice(): void {
+    tokenStore.abandonRemember()
+    pendingPasskey.value = false
+    persistenceNotice.value = null
   }
 
   /** Decrypt a remembered token with its passkey, then validate it. */
@@ -168,6 +204,7 @@ export const useAuthStore = defineStore('auth', () => {
     rateLimit.value = null
     error.value = null
     persistenceNotice.value = null
+    pendingPasskey.value = false
     hasRememberedToken.value = false
     status.value = 'disconnected'
   }
@@ -178,10 +215,13 @@ export const useAuthStore = defineStore('auth', () => {
     rateLimit,
     error,
     persistenceNotice,
+    pendingPasskey,
     hasRememberedToken,
     canRemember,
     isConnected,
     connect,
+    finishRemember,
+    dismissPersistenceNotice,
     unlock,
     restore,
     disconnect,
