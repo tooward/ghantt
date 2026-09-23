@@ -31,6 +31,10 @@ function task(id: TaskId, dependsOn: TaskId[] = [], warnings: string[] = []): Ta
     start: new Date(2026, 0, 5),
     due: new Date(2026, 0, 9),
     dependsOn,
+    blockers: [],
+    blocking: [],
+    effort: null,
+    canSetFields: true,
     warnings,
   }
 }

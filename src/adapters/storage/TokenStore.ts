@@ -35,11 +35,19 @@ export type Persistence = 'session' | 'persistent'
 import {
   decryptWithPasskey,
   encryptWithNewPasskey,
+  finishEnrolment,
   isPasskeyEncryptionAvailable,
   PasskeyError,
   type EncryptedToken,
   type PasskeyFailure,
+  type PendingPasskey,
 } from './PasskeyCipher'
+
+export type RememberResult =
+  | { status: 'saved' }
+  /** A passkey exists but has not produced a key yet; `finishRemember()` completes it. */
+  | { status: 'pending' }
+  | { status: 'failed'; reason: PasskeyFailure; message: string }
 
 const SESSION_KEY = 'gh-gantt:token'
 const DB_NAME = 'gh-gantt'
@@ -95,6 +103,7 @@ async function withStore<T>(
 export class TokenStore {
   private token: string | null = null
   private persistence: Persistence = 'session'
+  private pending: PendingPasskey | null = null
 
   /** Synchronous read. Reflects memory, hydrated from session storage on first use. */
   get(): string | null {
@@ -128,28 +137,58 @@ export class TokenStore {
   }
 
   /**
-   * Encrypt the token with a new passkey and store only the ciphertext.
-   * Prompts the user twice — once to create the passkey, once to derive its
-   * key. Returns the reason on failure so the UI can say what happened; the
-   * session copy is untouched either way.
+   * Encrypt the token with a new passkey and store only the ciphertext. One
+   * prompt when the authenticator returns a key at creation; otherwise the
+   * passkey is kept pending for `finishRemember()`. The session copy is
+   * untouched either way.
    */
-  async remember(token: string, label: string): Promise<{ ok: true } | { ok: false; reason: PasskeyFailure; message: string }> {
+  async remember(token: string, label: string): Promise<RememberResult> {
+    this.pending = null
     try {
-      const record = await encryptWithNewPasskey(token, label)
-      const written = await withStore('readwrite', (store) => store.put(toStored(record), DB_KEY))
-      if (written === null) {
-        return { ok: false, reason: 'failed', message: 'This browser would not store the encrypted token.' }
+      const result = await encryptWithNewPasskey(token, label)
+      if (result.status === 'pending') {
+        this.pending = result.pending
+        return { status: 'pending' }
       }
-      this.persistence = 'persistent'
-      return { ok: true }
+      return await this.save(result.record)
     } catch (cause) {
-      const error = cause instanceof PasskeyError ? cause : null
-      return {
-        ok: false,
-        reason: error?.reason ?? 'failed',
-        message: error?.message ?? 'Encrypting the token with a passkey failed.',
-      }
+      return failure(cause)
     }
+  }
+
+  /**
+   * Finish a pending enrolment by using the passkey once. Prompts the user, so
+   * it belongs behind a click. A dismissed prompt leaves it pending, so a
+   * retry reuses the same passkey instead of creating another.
+   */
+  async finishRemember(): Promise<RememberResult> {
+    const token = this.get()
+    if (!this.pending || !token) {
+      return { status: 'failed', reason: 'failed', message: 'There is no passkey waiting to be used.' }
+    }
+    try {
+      const record = await finishEnrolment(token, this.pending)
+      this.pending = null
+      return await this.save(record)
+    } catch (cause) {
+      const result = failure(cause)
+      if (result.reason !== 'declined') this.pending = null
+      return result
+    }
+  }
+
+  /** Give up on a pending enrolment. The passkey itself stays with the user. */
+  abandonRemember(): void {
+    this.pending = null
+  }
+
+  private async save(record: EncryptedToken): Promise<RememberResult> {
+    const written = await withStore('readwrite', (store) => store.put(toStored(record), DB_KEY))
+    if (written === null) {
+      return { status: 'failed', reason: 'failed', message: 'This browser would not store the encrypted token.' }
+    }
+    this.persistence = 'persistent'
+    return { status: 'saved' }
   }
 
   /** Whether an encrypted token is waiting to be unlocked. */
@@ -202,6 +241,7 @@ export class TokenStore {
   clear(): void {
     this.token = null
     this.persistence = 'session'
+    this.pending = null
     try {
       sessionStorage.removeItem(SESSION_KEY)
     } catch {
@@ -209,6 +249,15 @@ export class TokenStore {
     }
     void withStore('readwrite', (store) => store.delete(DB_KEY))
     void withStore('readwrite', (store) => store.delete(LEGACY_DB_KEY))
+  }
+}
+
+function failure(cause: unknown): { status: 'failed'; reason: PasskeyFailure; message: string } {
+  const error = cause instanceof PasskeyError ? cause : null
+  return {
+    status: 'failed',
+    reason: error?.reason ?? 'failed',
+    message: error?.message ?? 'Encrypting the token with a passkey failed.',
   }
 }
 

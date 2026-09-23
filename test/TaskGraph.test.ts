@@ -16,7 +16,7 @@
 
 import { describe, expect, it } from 'vitest'
 import type { Task, TaskId } from '../src/domain/Task'
-import { detectAndBreakCycles, pruneDanglingEdges } from '../src/domain/TaskGraph'
+import { detectAndBreakCycles, pruneDanglingEdges, wouldCreateCycle } from '../src/domain/TaskGraph'
 
 function task(id: TaskId, dependsOn: TaskId[] = []): Task {
   return {
@@ -27,6 +27,10 @@ function task(id: TaskId, dependsOn: TaskId[] = []): Task {
     start: new Date('2026-01-01T00:00:00Z'),
     due: new Date('2026-01-02T00:00:00Z'),
     dependsOn,
+    blockers: [],
+    blocking: [],
+    effort: null,
+    canSetFields: true,
     warnings: [],
   }
 }
@@ -147,5 +151,32 @@ describe('detectAndBreakCycles', () => {
 
   it('handles an empty task set', () => {
     expect(detectAndBreakCycles([])).toEqual({ tasks: [], brokenEdges: [] })
+  })
+})
+
+describe('wouldCreateCycle', () => {
+  // c is blocked by b, b by a: a -> b -> c in the order work happens.
+  const chain = [task('a'), task('b', ['a']), task('c', ['b'])]
+
+  it('allows a link that keeps the order acyclic', () => {
+    expect(wouldCreateCycle(chain, 'c', 'a')).toBe(false)
+  })
+
+  it('refuses a direct reversal', () => {
+    // a blocked by b, while b is already blocked by a.
+    expect(wouldCreateCycle(chain, 'a', 'b')).toBe(true)
+  })
+
+  it('refuses a loop through others', () => {
+    expect(wouldCreateCycle(chain, 'a', 'c')).toBe(true)
+  })
+
+  it('refuses linking an issue to itself', () => {
+    expect(wouldCreateCycle(chain, 'a', 'a')).toBe(true)
+  })
+
+  it('ignores edges to unloaded issues and survives an existing loop', () => {
+    const tangled = [task('x', ['y', 'elsewhere']), task('y', ['x'])]
+    expect(wouldCreateCycle(tangled, 'z', 'x')).toBe(false)
   })
 })

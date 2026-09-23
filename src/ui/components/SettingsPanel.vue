@@ -15,31 +15,57 @@
 -->
 
 <script setup lang="ts">
+import { useTemplateRef, watch } from 'vue'
 import { useSettingsStore } from '../../app/stores/settings'
 
 const settings = useSettingsStore()
 
 const open = defineModel<boolean>('open', { default: false })
+
+// A native modal <dialog>, as in RepoHelp: focus trapping, Esc and an inert
+// page come with it. `open` drives it; the dialog's own close (Esc included)
+// reports back through `close`.
+const dialog = useTemplateRef<HTMLDialogElement>('dialog')
+
+watch(
+  [open, dialog],
+  ([isOpen, el]) => {
+    if (!el) return
+    if (isOpen && !el.open) el.showModal()
+    if (!isOpen && el.open) el.close()
+  },
+  { immediate: true },
+)
+
+// A click whose target is the <dialog> itself landed on the backdrop.
+function onDialogClick(event: MouseEvent) {
+  if (event.target === dialog.value) open.value = false
+}
 </script>
 
 <template>
-  <section class="mt-6 rounded border border-gray-200">
-    <h2>
+  <dialog
+    ref="dialog"
+    aria-labelledby="settings-title"
+    class="m-auto w-full max-w-2xl rounded-lg p-0 shadow-xl backdrop:bg-black/40"
+    @close="open = false"
+    @click="onDialogClick"
+  >
+    <div class="flex items-center justify-between border-b border-gray-200 px-5 py-3">
+      <h2 id="settings-title" class="text-base font-semibold text-gray-900">Settings</h2>
       <button
         type="button"
-        class="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-medium"
-        :aria-expanded="open"
-        aria-controls="settings-body"
-        @click="open = !open"
+        class="-mr-1 rounded px-1 text-lg leading-none text-gray-500 hover:bg-gray-100"
+        aria-label="Close settings"
+        @click="open = false"
       >
-        Settings
-        <span aria-hidden="true">{{ open ? '−' : '+' }}</span>
+        ×
       </button>
-    </h2>
+    </div>
 
-    <div v-show="open" id="settings-body" class="grid gap-4 border-t border-gray-200 p-4 sm:grid-cols-2">
+    <div id="settings-body" class="grid gap-4 p-5 sm:grid-cols-2">
       <div>
-        <label for="start-field" class="block text-sm font-medium">Start date field</label>
+        <label for="start-field" class="block text-sm font-medium">Start field</label>
         <input
           id="start-field"
           v-model="settings.startFieldName"
@@ -49,7 +75,7 @@ const open = defineModel<boolean>('open', { default: false })
       </div>
 
       <div>
-        <label for="due-field" class="block text-sm font-medium">Due date field</label>
+        <label for="due-field" class="block text-sm font-medium">End field</label>
         <input
           id="due-field"
           v-model="settings.dueFieldName"
@@ -58,22 +84,13 @@ const open = defineModel<boolean>('open', { default: false })
       </div>
 
       <div>
-        <label for="start-prefix" class="block text-sm font-medium">Body start prefix</label>
+        <label for="effort-field" class="block text-sm font-medium">Effort field</label>
         <input
-          id="start-prefix"
-          v-model="settings.startPrefix"
-          class="mt-1 w-full rounded border border-gray-300 px-3 py-2 font-mono"
+          id="effort-field"
+          v-model="settings.effortFieldName"
+          class="mt-1 w-full rounded border border-gray-300 px-3 py-2"
         >
-        <p class="mt-1 text-xs text-gray-500">A line in the issue body, e.g. <code>GanttStart: 2026-03-01</code>.</p>
-      </div>
-
-      <div>
-        <label for="due-prefix" class="block text-sm font-medium">Body due prefix</label>
-        <input
-          id="due-prefix"
-          v-model="settings.duePrefix"
-          class="mt-1 w-full rounded border border-gray-300 px-3 py-2 font-mono"
-        >
+        <p class="mt-1 text-xs text-gray-500">A number or single-select issue field, shown in the detail panel.</p>
       </div>
 
       <div>
@@ -108,5 +125,5 @@ const open = defineModel<boolean>('open', { default: false })
         </button>
       </div>
     </div>
-  </section>
+  </dialog>
 </template>

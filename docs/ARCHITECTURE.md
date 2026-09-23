@@ -15,7 +15,7 @@ A **static, browser-only single-page application** that reads issues from GitHub
 | Decision | Choice | Consequence |
 |---|---|---|
 | Issue sources | **GitHub only** | No GitLab adapter. A `IssueSource` port still exists so one could be added, but do not build it. |
-| Direction | **Read-only** | The app never writes to GitHub. No mutations, no write token scopes, no optimistic UI, no conflict handling. |
+| Direction | **Read, plus date and blocker edits** (changed 2026-09-23; was read-only) | Writes are `setIssueFieldValue` on an issue's Start/End date fields, and `addBlockedBy` / `removeBlockedBy` for blocking links, all from the detail panel. No optimistic UI: the panel waits for GitHub and swaps in the issues as returned (both sides of a link). Date writes set absolute values and links are idempotent, so no conflict handling is needed yet. A new link is refused before any request if the loaded tasks show it would close a loop (`wouldCreateCycle`). |
 | Hosting | **Static files, no backend** | No server to hold secrets. This constrains authentication (see §6). |
 | Deployment | Any static host (GitHub Pages, Netlify, Vercel static) | Build output is plain `index.html` + assets. |
 | Browser target | **Chrome / Chromium only, for now** | Other browsers are expected later, so do not build foundations on Chromium-only APIs. See §6. |
@@ -122,7 +122,6 @@ src/
     Task.ts              Task type + TaskId
     TaskGraph.ts         Tasks + dependency edges, cycle detection
     dateResolution.ts    The date-resolution chain (§5)
-    bodyDates.ts         Parse "GanttStart:" / "GanttDue:" from issue body
   ports/
     IssueSource.ts       interface IssueSource { fetchPage(...) }
   adapters/
@@ -167,39 +166,61 @@ CORS was verified by preflight: `api.github.com/graphql` returns `access-control
 
 ### 5.2 The query
 
-This query is **verified working** — it was executed successfully against a live repository. Use it as-is.
+This query is **verified working** — it was executed successfully against a live repository (last re-run 2026-09-23, after adding Effort, blocker details and dropping `body`). Use it as-is.
 
 ```graphql
-query BoardIssues($owner: String!, $repo: String!, $first: Int!, $after: String) {
+query BoardIssues($owner: String!, $repo: String!, $first: Int!, $after: String, $type: String) {
   repository(owner: $owner, name: $repo) {
-    issues(first: $first, after: $after, states: OPEN,
+    # A null $type means no type filter.
+    issues(first: $first, after: $after, states: OPEN, filterBy: {type: $type},
            orderBy: {field: CREATED_AT, direction: ASC}) {
       pageInfo { hasNextPage endCursor }
       totalCount
-      nodes {
-        id
-        number
-        title
-        url
-        createdAt
-        body
-        milestone { title dueOn }
-        issueFieldValues(first: 20) {
-          nodes {
-            __typename
-            ... on IssueFieldDateValue {
-              value
-              field { ... on IssueFieldDate { name } }
-            }
-          }
-        }
-        blockedBy(first: 50) { nodes { id number } }
+      nodes { ...BoardIssue }
+    }
+    issueTypes(first: 25) { nodes { name } }
+  }
+  rateLimit { cost limit remaining resetAt }
+}
+
+# Everything mapIssue reads. Shared by the board query and the date mutation,
+# so an issue returned by a save maps exactly like one loaded by the board.
+fragment BoardIssue on Issue {
+  id
+  number
+  title
+  url
+  createdAt
+  repository { nameWithOwner }
+  viewerCanSetFields
+  milestone { title dueOn }
+  issueFieldValues(first: 20) {
+    nodes {
+      __typename
+      ... on IssueFieldDateValue {
+        value
+        field { ... on IssueFieldDate { name } }
+      }
+      ... on IssueFieldNumberValue {
+        numberValue: value
+        field { ... on IssueFieldNumber { name } }
+      }
+      ... on IssueFieldSingleSelectValue {
+        optionName: name
+        field { ... on IssueFieldSingleSelect { name } }
       }
     }
   }
-  rateLimit { cost remaining resetAt }
+  blockedBy(first: 50) {
+    nodes { id number title state repository { nameWithOwner } }
+  }
+  blocking(first: 50) {
+    nodes { id number title state repository { nameWithOwner } }
+  }
 }
 ```
+
+The fragment lives in `queries/boardIssue.fragment.graphql` and is appended to both the board query and the `SetIssueDates` mutation, so an issue returned by a save maps exactly like one loaded by the board. The `AddBlockedBy` / `RemoveBlockedBy` mutations use it too, for both `issue` and `blockingIssue`. The repository's date-field ids come from a separate `RepoDateFields` query (`repository.issueFields`), so a failure there turns editing off rather than breaking the chart.
 
 Schema facts confirmed by introspection on 2026-09-17:
 
@@ -209,6 +230,9 @@ Schema facts confirmed by introspection on 2026-09-17:
 - `IssueFieldDateValue` has `{ field: IssueFields, id: ID, value: String }` — note `value` is a **String**, not a Date
 - `IssueFields` is a **union**: `IssueFieldDate | IssueFieldText | IssueFieldNumber | IssueFieldSingleSelect | IssueFieldMultiSelect`
 - `Milestone.dueOn` (camelCase — the REST API calls it `due_on`)
+- `IssueFieldNumberValue.value` is a non-null **Float** and `IssueFieldSingleSelectValue` carries the chosen option as `name` (plus `value`, `color`, `optionId`). GraphQL rejects one response key with different types across fragments, so the query aliases them to `numberValue` and `optionName`. (Re-checked 2026-09-23.)
+- `IssueFilters` (the `issues(filterBy:)` argument) accepts `type`, `labels`, `milestone` and `issueFieldValues`. An `IssueFieldValueFilter` matches a date field by **exact** `dateValue` only — there is no range filter. (Re-checked 2026-09-23.)
+- Write mutations exist for later: `setIssueFieldValue`, `addBlockedBy`, `removeBlockedBy`. (Re-checked 2026-09-23.)
 
 Always request `rateLimit` so budget can be surfaced in the UI.
 
@@ -217,21 +241,20 @@ Always request `rateLimit` so budget can be surfaced in the UI.
 A Gantt bar needs a start and an end. GitHub issues have **no native start/due fields**, so dates are resolved by falling through this chain. First match wins, evaluated per issue.
 
 **Start date:**
-1. `issueFieldValues` — a `IssueFieldDateValue` whose `field.name` matches the configured start-field name (default `"Start date"`, case-insensitive)
-2. Body text — a line beginning `GanttStart:` followed by an ISO 8601 date
-3. **The resolved due date** minus the configured default duration — *only if* a due date was found and no start was. (§5.3 originally named `milestone.dueOn` here specifically. Phase 2 widened it to whichever due date won, because the narrow rule mangles a real case: an issue with an explicit due date, no start, and a later milestone took its start from the milestone, landed *after* its own due date, and had that explicit due date overwritten by the due-before-start clamp. When the milestone is the only due source the two rules agree.)
-4. `createdAt` — guaranteed to exist, so a start date is always produced
+1. `issueFieldValues` — a `IssueFieldDateValue` whose `field.name` matches the configured start-field name (default `"Start"`, case-insensitive)
+2. **The resolved due date** minus the configured default duration — *only if* a due date was found and no start was. (§5.3 originally named `milestone.dueOn` here specifically. Phase 2 widened it to whichever due date won, because the narrow rule mangles a real case: an issue with an explicit due date, no start, and a later milestone took its start from the milestone, landed *after* its own due date, and had that explicit due date overwritten by the due-before-start clamp. When the milestone is the only due source the two rules agree.)
+3. `createdAt` — guaranteed to exist, so a start date is always produced
 
 **Due date:**
-1. `issueFieldValues` — a date field matching the configured due-field name (default `"Target date"`)
-2. Body text — a line beginning `GanttDue:`
-3. `milestone.dueOn`
-4. Start date + `defaultTaskDays` (default 1)
+1. `issueFieldValues` — a date field matching the configured due-field name (default `"End"`)
+2. `milestone.dueOn`
+3. Start date + `defaultTaskDays` (default 1)
+
+Body lines (`GanttStart:` / `GanttDue:`, a GanttLab convention) were a rung on both chains until 2026-09-23. They were removed as fragile once organisation issue fields were in place: free text in a body is easy to break by accident and awkward to write back to.
 
 Notes for the implementer:
 
-- **Issue fields are organisation-level.** A personal-account repo returns an empty `issueFieldValues` list. Steps 2–4 must therefore always work. Never assume step 1 produces anything.
-- The `GanttStart:`/`GanttDue:` body convention is inherited from GanttLab so existing users' issues keep working. The prefixes are configurable.
+- **Issue fields are organisation-level.** A personal-account repo returns an empty `issueFieldValues` list. The later steps must therefore always work. Never assume step 1 produces anything.
 - `IssueFieldDateValue.value` is a **String**. Parse it and reject invalid dates — never let `Invalid Date` reach the chart.
 - If due < start after resolution, clamp due to start + `defaultTaskDays` and record a warning on the task. Do not throw.
 - **Format dates in local time, not with `toISOString()`.** A date-only string like `2026-04-20` parses to local midnight, so `toISOString().slice(0,10)` reports the previous day anywhere east of UTC. Use `date-fns`' `format(date, 'yyyy-MM-dd')` everywhere a date becomes a string, including the strings handed to `frappe-gantt`.
@@ -257,10 +280,10 @@ This is the sharpest constraint of a no-backend design, and it must not be gloss
 The user supplies a **GitHub Personal Access Token**, pasted into the app. Standard OAuth authorization-code flow is impossible without a server to hold the client secret.
 
 **Required scopes (fine-grained token, strongly preferred):**
-- Repository → Issues: **Read-only**
+- Repository → Issues: **Read and write** to save dates, or **Read-only** to view only
 - Repository → Metadata: **Read-only**
 
-That is all. If a classic token is used, `public_repo` covers public repositories and `repo` is needed for private ones — `repo` is far broader than we need, so recommend fine-grained tokens in the UI.
+That is all. `Issue.viewerCanSetFields` reflects the *user's* rights, not the token's: a read-only token still reports `true` and only fails on save (FORBIDDEN, surfaced as `AuthError`). The save path therefore catches that and explains it in the panel, and must never treat it as a dead connection. If a classic token is used, `public_repo` covers public repositories and `repo` is needed for private ones — `repo` is far broader than we need, so recommend fine-grained tokens in the UI.
 
 ### Storage policy
 
@@ -295,7 +318,7 @@ Support for `prf` varies by browser *and* by authenticator (fewer authenticators
 
 How it goes together:
 
-- Enrolment creates a discoverable credential with `extensions: { prf: {} }`, then **asserts once immediately** to derive the key. Creation-time `prf` reports only `enabled`; the secret itself comes from an assertion, and fewer authenticators support PRF at creation than at assertion.
+- Enrolment creates a discoverable credential with `extensions: { prf: { eval: { first: salt } } }`. Where the authenticator returns a PRF result at creation, that is the key and enrolment costs one prompt. Where it returns only `enabled`, the key has to come from an assertion — and that assertion is **not** fired straight after creation: browsers reject a second prompt without a fresh user gesture, surfacing as `NotAllowedError` ("dismissed") on a prompt the user never saw. The passkey is held pending in memory and a "Use passkey" button makes the assertion on its own click; a dismissed retry reuses the same passkey rather than creating another.
 - The PRF output is run through HKDF-SHA-256 with a per-record 32-byte salt and a fixed `info` string, so the same passkey used elsewhere yields a different key. The AES-GCM key is non-extractable.
 - Only `{ credentialId, salt, iv, ciphertext }` reaches IndexedDB.
 - Unlocking is behind an explicit "Unlock with passkey" button. `restore()` deliberately does **not** decrypt on page load: that would mean a biometric prompt nobody asked for, and the whole point of this tier is that the gesture is visible.
@@ -392,7 +415,7 @@ Write a local declaration at `src/types/frappe-gantt.d.ts` covering only what we
 - Handle the empty-array case **before** constructing; frappe does not handle zero tasks gracefully.
 - Call `clear()` and drop the instance in `onBeforeUnmount`.
 - Bar click opens `task.url` with `target="_blank"` and `rel="noopener noreferrer"`.
-- Set `readonly: true` in options — this app never edits.
+- Set `readonly: true` in options. Dates are edited in the detail panel, not by dragging bars; dragging is a later step (backlog).
 
 ## 9. Testing
 

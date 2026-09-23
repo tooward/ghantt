@@ -15,31 +15,55 @@
 -->
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useBoardStore } from '../../app/stores/board'
 import { useSettingsStore } from '../../app/stores/settings'
 import ChartSkeleton from '../components/ChartSkeleton.vue'
 import ErrorBanner from '../components/ErrorBanner.vue'
 import GanttChart from '../components/GanttChart.vue'
 import GraphNotice from '../components/GraphNotice.vue'
-import SettingsPanel from '../components/SettingsPanel.vue'
+import RepoHelp from '../components/RepoHelp.vue'
+import TaskDetail from '../components/TaskDetail.vue'
+import type { TaskId } from '../../domain/Task'
 
 const board = useBoardStore()
 const settings = useSettingsStore()
 
 const owner = ref(settings.lastOwner)
 const name = ref(settings.lastRepo)
-const settingsOpen = ref(false)
+const issueType = ref(settings.issueType)
+const selectedId = ref<TaskId | null>(null)
+
+// Read from the unpruned tasks: the panel lists every blocker GitHub reports,
+// including those the graph drops.
+const selectedTask = computed(() => board.tasks.find((task) => task.id === selectedId.value) ?? null)
+
+// A reload or a different repository can take the selected task away.
+watch(selectedTask, (task) => {
+  if (!task) selectedId.value = null
+})
 
 const warnedTasks = computed(() => board.graph.tasks.filter((task) => task.warnings.length > 0).length)
 const canLoad = computed(() => owner.value.trim() !== '' && name.value.trim() !== '')
+/** "Feature issues" or "issues", for the counts and the empty state. */
+const loadedType = computed(() => board.repo?.issueType ?? null)
+const issueNoun = computed(() => (loadedType.value ? `${loadedType.value} issues` : 'issues'))
+
+// A typo filters everything out, which would look like an empty repository.
+const unknownType = computed(() => {
+  const type = loadedType.value?.toLowerCase()
+  if (!type || board.issueTypes.length === 0) return false
+  return !board.issueTypes.some((known) => known.toLowerCase() === type)
+})
+
 const isFirstLoad = computed(() => board.loading && board.tasks.length === 0)
 
 async function onLoad() {
   if (!canLoad.value) return
   settings.lastOwner = owner.value.trim()
   settings.lastRepo = name.value.trim()
-  await board.loadRepo(owner.value, name.value)
+  settings.issueType = issueType.value.trim()
+  await board.loadRepo(owner.value, name.value, issueType.value)
 }
 
 onMounted(() => {
@@ -52,7 +76,10 @@ onMounted(() => {
   <section>
     <form class="flex flex-wrap items-end gap-3" @submit.prevent="onLoad">
       <div>
-        <label for="owner" class="block text-sm font-medium">Owner</label>
+        <div class="flex items-center">
+          <label for="owner" class="text-sm font-medium">Owner</label>
+          <RepoHelp />
+        </div>
         <input
           id="owner"
           v-model="owner"
@@ -70,6 +97,20 @@ onMounted(() => {
           placeholder="gantt"
           class="mt-1 rounded border border-gray-300 px-3 py-2"
         >
+      </div>
+      <div>
+        <label for="issue-type" class="block text-sm font-medium">Type</label>
+        <input
+          id="issue-type"
+          v-model="issueType"
+          list="issue-types"
+          placeholder="All types"
+          class="mt-1 w-36 rounded border border-gray-300 px-3 py-2"
+        >
+        <!-- Suggestions from the loaded repository; free text still works. -->
+        <datalist id="issue-types">
+          <option v-for="type in board.issueTypes" :key="type" :value="type" />
+        </datalist>
       </div>
       <button
         type="submit"
@@ -97,7 +138,7 @@ onMounted(() => {
 
     <div v-else-if="board.tasks.length" class="mt-6">
       <p class="text-sm text-gray-600" aria-live="polite">
-        Showing {{ board.graph.tasks.length }} of {{ board.totalCount }} open issues.
+        Showing {{ board.graph.tasks.length }} of {{ board.totalCount }} open {{ issueNoun }}.
       </p>
 
       <GraphNotice
@@ -106,7 +147,30 @@ onMounted(() => {
         :warned-tasks="warnedTasks"
       />
 
-      <GanttChart class="mt-3" :tasks="board.graph.tasks" :view-mode="settings.viewMode" />
+      <div class="relative mt-3">
+        <GanttChart
+          :tasks="board.graph.tasks"
+          :view-mode="settings.viewMode"
+          :selected-id="selectedId"
+          @select="selectedId = $event"
+        />
+        <!-- Outside the chart's scroll container so it stays put, and just
+             below the date header so the dates stay readable. -->
+        <!-- Keyed by task, so choosing another bar starts a fresh form. -->
+        <TaskDetail
+          v-if="selectedTask"
+          :key="selectedTask.id"
+          class="absolute right-3 top-24 z-10"
+          :task="selectedTask"
+          :tasks="board.tasks"
+          :editability="board.dateEditability"
+          :save="(changes) => board.saveDates(selectedTask!.id, changes)"
+          :link="board.linkBlocker"
+          :unlink="board.unlinkBlocker"
+          @close="selectedId = null"
+          @select="selectedId = $event"
+        />
+      </div>
 
       <button
         v-if="board.hasNextPage"
@@ -120,9 +184,11 @@ onMounted(() => {
     </div>
 
     <p v-else-if="board.repo && !board.loading && !board.error" class="mt-6 text-sm text-gray-600">
-      No open issues in {{ board.repo.owner }}/{{ board.repo.name }}.
+      No open {{ issueNoun }} in {{ board.repo.owner }}/{{ board.repo.name }}.
+      <template v-if="unknownType">
+        This repository has no “{{ loadedType }}” type; it has {{ board.issueTypes.join(', ') }}.
+      </template>
     </p>
 
-    <SettingsPanel v-model:open="settingsOpen" />
   </section>
 </template>

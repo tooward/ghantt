@@ -29,6 +29,10 @@ function task(id: TaskId, dependsOn: TaskId[] = []): Task {
     start: new Date(2026, 0, 5),
     due: new Date(2026, 0, 9),
     dependsOn,
+    blockers: [],
+    blocking: [],
+    effort: null,
+    canSetFields: true,
     warnings: [],
   }
 }
@@ -85,15 +89,34 @@ describe('GanttChart', () => {
     expect(wrapper.element.querySelectorAll('.bar-wrapper')).toHaveLength(1)
   })
 
-  it('opens the issue in a new tab when a bar is clicked', async () => {
+  it('selects a task on click, and clears it on a second click, without opening GitHub', async () => {
     const open = vi.fn()
     vi.stubGlobal('open', open)
 
     const wrapper = await mountChart([task('a')])
-    wrapper.element.querySelector('.bar-wrapper')?.dispatchEvent(new Event('click', { bubbles: true }))
+    const bar = () => wrapper.element.querySelector('.bar-wrapper')!
+    bar().dispatchEvent(new Event('click', { bubbles: true }))
 
-    expect(open).toHaveBeenCalledWith('https://github.com/o/r/issues/a', '_blank', 'noopener,noreferrer')
+    expect(wrapper.emitted('select')).toEqual([['a']])
+    expect(open).not.toHaveBeenCalled()
+
+    await wrapper.setProps({ selectedId: 'a' })
+    expect(bar().classList.contains('gh-gantt-selected')).toBe(true)
+
+    bar().dispatchEvent(new Event('click', { bubbles: true }))
+    expect(wrapper.emitted('select')?.[1]).toEqual([null])
     vi.unstubAllGlobals()
+  })
+
+  it('keeps the selected bar highlighted across a re-render', async () => {
+    const wrapper = mount(GanttChart, { props: { tasks: [task('a'), task('b')], viewMode: 'Week' as const, selectedId: 'b' } })
+    await wrapper.vm.$nextTick()
+
+    await wrapper.setProps({ tasks: [task('a'), task('b'), task('c')] })
+
+    const selected = wrapper.element.querySelectorAll('.gh-gantt-selected')
+    expect(selected).toHaveLength(1)
+    expect(selected[0].getAttribute('data-id')).toBe('b')
   })
 
   it('re-renders on a view mode change', async () => {

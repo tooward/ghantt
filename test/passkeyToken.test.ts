@@ -20,8 +20,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   decryptWithPasskey,
   encryptWithNewPasskey,
+  finishEnrolment,
   isPasskeyEncryptionAvailable,
   PasskeyError,
+  type EncryptedToken,
 } from '../src/adapters/storage/PasskeyCipher'
 import { TokenStore } from '../src/adapters/storage/TokenStore'
 
@@ -36,7 +38,11 @@ class FakeAuthenticator {
   createCalls = 0
   getCalls = 0
   prfEnabled = true
+  /** Many authenticators return a PRF result only when asserting, not creating. */
+  prfResultOnCreation = true
   prfResultOnAssertion = true
+  /** Makes the next `get()` reject as a browser does for a prompt without a gesture. */
+  rejectNextGet = false
 
   constructor(private readonly secret = 'authenticator-secret') {}
 
@@ -51,16 +57,24 @@ class FakeAuthenticator {
     })
   }
 
-  private async create(): Promise<unknown> {
+  private async create(options: CredentialCreationOptions): Promise<unknown> {
     this.createCalls += 1
+    const salt = options.publicKey?.extensions?.prf?.eval?.first as Uint8Array | undefined
+    const results = this.prfEnabled && this.prfResultOnCreation && salt
+      ? { results: { first: this.prf(new Uint8Array(salt)) } }
+      : {}
     return {
       rawId: new TextEncoder().encode('credential-1').buffer,
-      getClientExtensionResults: () => ({ prf: { enabled: this.prfEnabled } }),
+      getClientExtensionResults: () => ({ prf: { enabled: this.prfEnabled, ...results } }),
     }
   }
 
   private async get(options: CredentialRequestOptions): Promise<unknown> {
     this.getCalls += 1
+    if (this.rejectNextGet) {
+      this.rejectNextGet = false
+      throw Object.assign(new Error('not allowed'), { name: 'NotAllowedError' })
+    }
     const salt = options.publicKey?.extensions?.prf?.eval?.first as Uint8Array
     // No await anywhere in here: with nothing slow in the path, an ordering
     // bug in the code under test shows up instead of being hidden behind a
@@ -85,6 +99,12 @@ class FakeAuthenticator {
 }
 
 let authenticator: FakeAuthenticator
+
+/** Enrol by whichever path the authenticator allows, as the UI would. */
+async function enrol(token: string): Promise<EncryptedToken> {
+  const result = await encryptWithNewPasskey(token, 'octocat')
+  return result.status === 'done' ? result.record : finishEnrolment(token, result.pending)
+}
 
 beforeEach(() => {
   authenticator = new FakeAuthenticator()
@@ -120,14 +140,28 @@ describe('isPasskeyEncryptionAvailable', () => {
 })
 
 describe('passkey encryption round trip', () => {
-  it('encrypts and decrypts the token', async () => {
-    const record = await encryptWithNewPasskey(TOKEN, 'octocat')
+  it('encrypts with one prompt when creation returns a PRF result', async () => {
+    const result = await encryptWithNewPasskey(TOKEN, 'octocat')
 
+    expect(result.status).toBe('done')
+    expect(authenticator.getCalls).toBe(0)
+    // Decrypting asserts: the creation-time and assertion-time PRF must agree.
+    expect(await decryptWithPasskey((result as { record: EncryptedToken }).record)).toBe(TOKEN)
+  })
+
+  it('leaves the key to a separate step when creation returns no PRF result', async () => {
+    authenticator.prfResultOnCreation = false
+
+    const result = await encryptWithNewPasskey(TOKEN, 'octocat')
+
+    expect(result.status).toBe('pending')
+    expect(authenticator.getCalls).toBe(0)
+    const record = await finishEnrolment(TOKEN, (result as Extract<typeof result, { status: 'pending' }>).pending)
     expect(await decryptWithPasskey(record)).toBe(TOKEN)
   })
 
   it('stores no plaintext in the record', async () => {
-    const record = await encryptWithNewPasskey(TOKEN, 'octocat')
+    const record = await enrol(TOKEN)
 
     const asText = new TextDecoder().decode(record.ciphertext)
     expect(asText).not.toContain(TOKEN)
@@ -135,7 +169,7 @@ describe('passkey encryption round trip', () => {
   })
 
   it('cannot be decrypted by a different authenticator', async () => {
-    const record = await encryptWithNewPasskey(TOKEN, 'octocat')
+    const record = await enrol(TOKEN)
 
     new FakeAuthenticator('a-different-authenticator').install()
 
@@ -143,9 +177,10 @@ describe('passkey encryption round trip', () => {
   })
 
   it('reports no-prf when the authenticator returns no PRF result', async () => {
+    authenticator.prfResultOnCreation = false
     authenticator.prfResultOnAssertion = false
 
-    const error = await encryptWithNewPasskey(TOKEN, 'octocat').catch((e: PasskeyError) => e)
+    const error = await enrol(TOKEN).catch((e: PasskeyError) => e)
 
     expect(error).toBeInstanceOf(PasskeyError)
     expect((error as PasskeyError).reason).toBe('no-prf')
@@ -197,7 +232,7 @@ describe('TokenStore with passkey persistence', () => {
     const store = new TokenStore()
 
     const result = await store.remember(TOKEN, 'octocat')
-    expect(result.ok).toBe(true)
+    expect(result.status).toBe('saved')
     expect(await store.hasEncryptedToken()).toBe(true)
 
     const fresh = new TokenStore()
@@ -229,7 +264,7 @@ describe('TokenStore with passkey persistence', () => {
 
     const result = await store.remember(TOKEN, 'octocat')
 
-    expect(result.ok).toBe(false)
+    expect(result.status).toBe('failed')
     expect(await store.hasEncryptedToken()).toBe(false)
   })
 
@@ -252,8 +287,37 @@ describe('TokenStore with passkey persistence', () => {
     store.set(TOKEN, 'session')
     const result = await store.remember(TOKEN, 'octocat')
 
-    expect(result.ok).toBe(true)
+    expect(result.status).toBe('saved')
     expect(await store.hasEncryptedToken()).toBe(true)
+  })
+
+  it('finishes a pending enrolment, retrying the same passkey after a dismissed prompt', async () => {
+    authenticator.prfResultOnCreation = false
+    const store = new TokenStore()
+    store.set(TOKEN, 'session')
+
+    expect((await store.remember(TOKEN, 'octocat')).status).toBe('pending')
+    expect(await store.hasEncryptedToken()).toBe(false)
+
+    authenticator.rejectNextGet = true
+    const dismissed = await store.finishRemember()
+    expect(dismissed).toMatchObject({ status: 'failed', reason: 'declined' })
+
+    expect((await store.finishRemember()).status).toBe('saved')
+    expect(authenticator.createCalls).toBe(1)
+    expect(await new TokenStore().unlock()).toBe(TOKEN)
+  })
+
+  it('has nothing to finish once a pending enrolment is abandoned', async () => {
+    authenticator.prfResultOnCreation = false
+    const store = new TokenStore()
+    store.set(TOKEN, 'session')
+    await store.remember(TOKEN, 'octocat')
+
+    store.abandonRemember()
+
+    expect((await store.finishRemember()).status).toBe('failed')
+    expect(authenticator.getCalls).toBe(0)
   })
 
   it('forget drops the remembered token but keeps this tab connected', async () => {

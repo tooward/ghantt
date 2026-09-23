@@ -2,13 +2,14 @@
 
 A browser-hosted Gantt chart for GitHub issues, with dependency arrows.
 
-No backend, no database, no server process. It is a static page that reads issues from GitHub's GraphQL API directly in your browser, using a personal access token that never leaves your machine. Read-only: editing happens in GitHub.
+No backend, no database, no server process. It is a static page that reads issues from GitHub's GraphQL API directly in your browser, using a personal access token that never leaves your machine. It can also change an issue's Start and End dates and its blocking links from the chart; everything else is edited in GitHub.
 
 ## What it does
 
-- Charts the open issues of one repository, one bar per issue.
+- Charts the open issues of one repository, one bar per issue — by default only issues of type **Feature**. Change or clear the Type box on the top row (empty means every type); it suggests the repository's own issue types.
 - Draws `blocked by` relationships as arrows, so the order of work is visible.
-- Resolves start and due dates from issue date fields, from the issue body, or from the milestone — see [Where the dates come from](#where-the-dates-come-from).
+- Resolves start and due dates from issue date fields or from the milestone — see [Where the dates come from](#where-the-dates-come-from).
+- Edits an issue's Start and End dates, and what it is blocked by and what it blocks, from the detail panel, saving straight to GitHub.
 - Pages through large boards and shows your remaining API budget.
 
 ## Running it
@@ -29,10 +30,10 @@ The build output in `dist/` is plain static files and can be served from any sta
 
 Create a [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new) with access to the repository you want to chart, and give it exactly:
 
-- Repository permissions → **Issues: Read-only**
+- Repository permissions → **Issues: Read and write** — or **Read-only** if you only want to view the chart
 - Repository permissions → **Metadata: Read-only**
 
-Nothing else. The app never writes to GitHub. Set an expiry of 90 days or less.
+Nothing else. The only things the app ever writes are an issue's date fields and its blocking links, and only when you ask it to. With a read-only token the chart works as before and a save is refused with a message saying so. Set an expiry of 90 days or less.
 
 A classic token also works — `public_repo` for public repositories, `repo` for private ones — but `repo` grants far more than this app needs, so prefer a fine-grained token.
 
@@ -42,7 +43,7 @@ A classic token also works — `public_repo` for public repositories, `repo` for
 
 - By default the token is held in memory and `sessionStorage`, so it is forgotten when you close the tab.
 - The connect form is marked up so your browser or password manager offers to save it. That is the recommended place to keep it: it then lives in the manager's vault rather than in this site's storage.
-- Ticking "remember this token on this device" encrypts it with a key derived from a **passkey** and stores only the ciphertext. You are asked to create a passkey, then to use it; getting the token back later needs your fingerprint, face or PIN, so a script on the page cannot read it silently. If your browser or authenticator cannot do this, the app stays session-only and tells you — it never falls back to storing a bare token.
+- Ticking "remember this token on this device" encrypts it with a key derived from a **passkey** and stores only the ciphertext. You are asked to create a passkey — and, if your authenticator needs it, to use it once more with a "Use passkey" button; getting the token back later needs your fingerprint, face or PIN, so a script on the page cannot read it silently. If your browser or authenticator cannot do this, the app stays session-only and tells you — it never falls back to storing a bare token.
 - Unlocking is an explicit "Unlock with passkey" button. The app never prompts for your passkey just because a page loaded.
 - The token is never written to local storage, never put in a URL, and is redacted from error messages.
 - "Disconnect" clears memory, session storage and the encrypted record. That is the only thing that forgets a remembered token: connecting with a different token and leaving "remember" unticked keeps the stored one, because re-enrolling costs a new passkey.
@@ -55,23 +56,25 @@ GitHub issues have no start or due date, so each bar's dates are resolved by fal
 
 **Start date**
 
-1. An issue **date field** named `Start date` (configurable, matched case-insensitively). Issue fields are organisation-level, so personal repositories have none — the rest of the chain always works.
-2. A line in the issue body beginning `GanttStart:` followed by an ISO date, e.g. `GanttStart: 2026-03-01`.
-3. The resolved due date minus the default task length.
-4. The issue's creation date, which always exists.
+1. An issue **date field** named `Start` (configurable, matched case-insensitively). Issue fields are organisation-level, so personal repositories have none — the rest of the chain always works.
+2. The resolved due date minus the default task length.
+3. The issue's creation date, which always exists.
 
 **Due date**
 
-1. An issue **date field** named `Target date` (configurable).
-2. A line in the issue body beginning `GanttDue:`.
-3. The milestone's due date.
-4. The start date plus the default task length (1 day by default).
+1. An issue **date field** named `End` (configurable).
+2. The milestone's due date.
+3. The start date plus the default task length (1 day by default).
 
-Field names, body prefixes, the default task length and the page size are all editable in the app's Settings panel and are remembered in local storage. Dates that cannot be parsed are ignored and reported on the bar rather than guessed at; a due date falling before its start is corrected and flagged.
+Clicking a bar selects it and shows its start, end, effort and blockers in a panel at the top right of the chart, with a link to the issue in GitHub. Start and End can be changed there and saved to the issue's date fields; only a date you changed is written, so one shown from the milestone or the creation date is never copied into a field by accident. A date is read-only when the repository has no date field of that name, or you cannot set fields on the issue. Effort is read from an issue field named `Effort` — a number or a single select — and is shown, not yet used to compute dates.
+
+Field names, the default task length and the page size are all editable in the app's Settings window (the gear icon in the header) and are remembered in local storage. Dates that cannot be parsed are ignored and reported on the bar rather than guessed at; a due date falling before its start is corrected and flagged.
 
 ## Dependencies
 
 An issue's `blocked by` links become arrows pointing from the blocker to the blocked issue.
+
+The detail panel lists both directions — **Blocked by** and **Blocks** — and can change them. **+ Add blocker** / **+ Add blocked issue** opens a picker over the issues already loaded on the chart: type a number or part of a title, then pick with the mouse or the arrow keys and Enter. It makes no requests while you type. Issues that would create a circular dependency are shown greyed out with the reason. Removing a link asks you to confirm first. With the Type box set to Feature only Features are loaded, so for now only they can be picked; picking an issue that is not loaded (by `#number` or URL) is the next step.
 
 Some edges cannot be drawn: `blocked by` can name a closed issue, an issue in another repository, or one that has not been paged in yet. Those are dropped and counted in a notice rather than breaking the chart — load more issues and the ones that were merely unloaded turn into real arrows. Circular dependencies are detected, one edge is dropped to break the loop, and that too is reported.
 

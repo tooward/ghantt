@@ -14,23 +14,23 @@
  * limitations under the License.
  */
 
-import { parseBodyDates, type BodyDateConfig } from '../../domain/bodyDates'
 import { resolveDates } from '../../domain/dateResolution'
-import type { Task } from '../../domain/Task'
-import type { GitHubIssueNode } from './types'
+import type { LinkedIssue, Task } from '../../domain/Task'
+import type { GitHubIssueNode, GitHubIssueRef } from './types'
 
-export interface MapConfig extends BodyDateConfig {
+export interface MapConfig {
   /** Name of the issue date field holding the start date, matched case-insensitively. */
   startFieldName: string
   dueFieldName: string
+  /** A number or single-select issue field; shown as-is, not yet used for dates. */
+  effortFieldName: string
   defaultTaskDays: number
 }
 
 export const DEFAULT_MAP_CONFIG: MapConfig = {
-  startFieldName: 'Start date',
-  dueFieldName: 'Target date',
-  startPrefix: 'GanttStart:',
-  duePrefix: 'GanttDue:',
+  startFieldName: 'Start',
+  dueFieldName: 'End',
+  effortFieldName: 'Effort',
   defaultTaskDays: 1,
 }
 
@@ -42,19 +42,17 @@ export const DEFAULT_MAP_CONFIG: MapConfig = {
  * handed over unparsed and the domain layer decides whether it is usable.
  */
 export function mapIssue(node: GitHubIssueNode, cfg: MapConfig): Task {
-  const bodyDates = parseBodyDates(node.body, cfg)
-
   const { start, due, warnings } = resolveDates(
     {
       fieldStart: dateFieldValue(node, cfg.startFieldName),
       fieldDue: dateFieldValue(node, cfg.dueFieldName),
-      bodyStart: bodyDates.start,
-      bodyDue: bodyDates.due,
       milestoneDue: node.milestone?.dueOn ?? null,
       createdAt: node.createdAt,
     },
     { defaultTaskDays: cfg.defaultTaskDays },
   )
+
+  const blockedBy = (node.blockedBy?.nodes ?? []).filter(Boolean)
 
   return {
     id: node.id,
@@ -65,21 +63,50 @@ export function mapIssue(node: GitHubIssueNode, cfg: MapConfig): Task {
     due,
     // `blockedBy` means "these must finish first", which is exactly dependsOn.
     // Edges may point outside the loaded set; pruning is the graph layer's job.
-    dependsOn: (node.blockedBy?.nodes ?? []).filter(Boolean).map((ref) => ref.id),
+    dependsOn: blockedBy.map((ref) => ref.id),
+    blockers: blockedBy.map((ref) => linkedIssue(ref, node)),
+    blocking: (node.blocking?.nodes ?? []).filter(Boolean).map((ref) => linkedIssue(ref, node)),
+    effort: effortValue(node, cfg.effortFieldName),
+    canSetFields: node.viewerCanSetFields === true,
     warnings,
   }
 }
 
+function linkedIssue(ref: GitHubIssueRef, node: GitHubIssueNode): LinkedIssue {
+  return {
+    id: ref.id,
+    number: ref.number,
+    title: ref.title,
+    closed: ref.state === 'CLOSED',
+    // Named only when it differs, so same-repository links read as plain "#12".
+    repository: ref.repository && ref.repository.nameWithOwner !== node.repository?.nameWithOwner
+      ? ref.repository.nameWithOwner
+      : null,
+  }
+}
+
 function dateFieldValue(node: GitHubIssueNode, fieldName: string): string | null {
+  return fieldValueNode(node, fieldName, ['IssueFieldDateValue'])?.value ?? null
+}
+
+/** Effort may be set up as a number field or a single select; accept either. */
+function effortValue(node: GitHubIssueNode, fieldName: string): string | null {
+  const value = fieldValueNode(node, fieldName, ['IssueFieldNumberValue', 'IssueFieldSingleSelectValue'])
+  if (!value) return null
+  if (typeof value.numberValue === 'number') return String(value.numberValue)
+  return value.optionName ?? null
+}
+
+function fieldValueNode(node: GitHubIssueNode, fieldName: string, typenames: string[]) {
   const wanted = fieldName.trim().toLowerCase()
   if (!wanted) return null
 
   for (const value of node.issueFieldValues?.nodes ?? []) {
-    // Check the union discriminator before touching `field` — text, number and
-    // select values have neither `field.name` nor `value`.
-    if (!value || value.__typename !== 'IssueFieldDateValue') continue
+    // Check the union discriminator before touching `field` — each fragment
+    // selects only its own variant's properties.
+    if (!value || !typenames.includes(value.__typename)) continue
     if (value.field?.name?.trim().toLowerCase() !== wanted) continue
-    return value.value ?? null
+    return value
   }
   return null
 }

@@ -88,20 +88,42 @@ describe('mapIssue — issue date fields', () => {
     const task = mapIssue(syntheticNodes[1], cfg)
 
     expect(() => mapIssue(syntheticNodes[1], cfg)).not.toThrow()
-    // It must not be mistaken for the start field: the body date wins instead.
-    expect(day(task.start)).toBe('2026-03-10')
+    // It must not be mistaken for the start field: the milestone rung wins instead.
+    expect(day(task.start)).toBe('2026-04-29')
+  })
+})
+
+describe('mapIssue — permissions', () => {
+  it('reads viewerCanSetFields, treating an absent value as no', () => {
+    expect(mapIssue(syntheticNodes[0], cfg).canSetFields).toBe(true)
+    expect(mapIssue(syntheticNodes[2], cfg).canSetFields).toBe(false)
+    expect(mapIssue(liveNodes[0], cfg).canSetFields).toBe(false)
+  })
+})
+
+describe('mapIssue — effort', () => {
+  it('reads a number field, matching the name case-insensitively', () => {
+    expect(mapIssue(syntheticNodes[0], cfg).effort).toBe('5')
+  })
+
+  it('reads a single-select field as its option name', () => {
+    expect(mapIssue(syntheticNodes[1], cfg).effort).toBe('M')
+  })
+
+  it('is null when the issue has no effort, or the name is configured away', () => {
+    expect(mapIssue(syntheticNodes[2], cfg).effort).toBeNull()
+    expect(mapIssue(syntheticNodes[0], { ...cfg, effortFieldName: 'Size' }).effort).toBeNull()
+  })
+
+  it('does not take another select field for effort', () => {
+    // Node 0 also has a Priority select; only the Effort field counts.
+    expect(mapIssue(syntheticNodes[0], { ...cfg, effortFieldName: 'Priority' }).effort).toBe('High')
+    expect(mapIssue(syntheticNodes[0], cfg).effort).not.toBe('High')
   })
 })
 
 describe('mapIssue — fallback chain', () => {
-  it('falls back to body dates when there is no matching field', () => {
-    const task = mapIssue(syntheticNodes[1], cfg)
-
-    expect(day(task.start)).toBe('2026-03-10')
-    expect(day(task.due)).toBe('2026-03-20')
-  })
-
-  it('falls back to the milestone when there is no field and no body date', () => {
+  it('falls back to the milestone when there is no matching field', () => {
     const task = mapIssue(syntheticNodes[2], cfg)
 
     expect(day(task.due)).toBe('2026-04-30')
@@ -117,7 +139,7 @@ describe('mapIssue — dependencies', () => {
     const ship = mapIssue(syntheticNodes[2], cfg)
 
     expect(build.dependsOn).toEqual(['I_kwDOSYNTH001', 'I_kwDOELSEWHERE'])
-    expect(ship.dependsOn).toEqual(['I_kwDOSYNTH002'])
+    expect(ship.dependsOn).toEqual(['I_kwDOSYNTH002', 'I_kwDOSYNTH000'])
     // The blocker itself depends on nothing.
     expect(mapIssue(syntheticNodes[0], cfg).dependsOn).toEqual([])
   })
@@ -125,23 +147,41 @@ describe('mapIssue — dependencies', () => {
   it('keeps edges pointing outside the loaded set, leaving pruning to the graph layer', () => {
     expect(mapIssue(syntheticNodes[1], cfg).dependsOn).toContain('I_kwDOELSEWHERE')
   })
+
+  it('keeps every blocker for display, naming the repository only when it differs', () => {
+    expect(mapIssue(syntheticNodes[1], cfg).blockers).toEqual([
+      { id: 'I_kwDOSYNTH001', number: 101, title: 'Design the thing', closed: false, repository: null },
+      { id: 'I_kwDOELSEWHERE', number: 7, title: 'Stable API', closed: false, repository: 'acme/api' },
+    ])
+    expect(mapIssue(syntheticNodes[2], cfg).blockers[1]).toMatchObject({ number: 100, closed: true })
+  })
+
+  it('maps the reverse direction into blocking', () => {
+    expect(mapIssue(syntheticNodes[0], cfg).blocking).toEqual([
+      { id: 'I_kwDOSYNTH002', number: 102, title: 'Build the thing', closed: false, repository: null },
+    ])
+    expect(mapIssue(syntheticNodes[2], cfg).blocking).toEqual([])
+  })
 })
 
 describe('mapIssue — malformed input', () => {
   const base = syntheticNodes[0]
 
-  it('survives a null body, null milestone and null connections', () => {
+  it('survives a null milestone and null connections', () => {
     const node = {
       ...base,
-      body: null,
       milestone: null,
       issueFieldValues: null,
       blockedBy: null,
+      blocking: null,
     } as GitHubIssueNode
 
     const task = mapIssue(node, cfg)
 
     expect(task.dependsOn).toEqual([])
+    expect(task.blockers).toEqual([])
+    expect(task.blocking).toEqual([])
+    expect(task.effort).toBeNull()
     expect(day(task.start)).toBe('2026-02-01')
   })
 
@@ -149,7 +189,7 @@ describe('mapIssue — malformed input', () => {
     const node = {
       ...base,
       issueFieldValues: {
-        nodes: [{ __typename: 'IssueFieldDateValue', value: 'whenever', field: { name: 'Start date' } }],
+        nodes: [{ __typename: 'IssueFieldDateValue', value: 'whenever', field: { name: 'Start' } }],
       },
     } as GitHubIssueNode
 

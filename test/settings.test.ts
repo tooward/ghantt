@@ -30,8 +30,9 @@ describe('settings persistence', () => {
   it('starts from defaults when nothing is stored', () => {
     const settings = useSettingsStore()
 
-    expect(settings.startFieldName).toBe('Start date')
+    expect(settings.startFieldName).toBe('Start')
     expect(settings.viewMode).toBe('Week')
+    expect(settings.issueType).toBe('Feature')
   })
 
   it('restores stored preferences', () => {
@@ -55,7 +56,7 @@ describe('settings persistence', () => {
     expect(settings.viewMode).toBe('Week')
     expect(settings.pageSize).toBe(50)
     expect(settings.defaultTaskDays).toBe(1)
-    expect(settings.startFieldName).toBe('Start date')
+    expect(settings.startFieldName).toBe('Start')
   })
 
   it('caps a page size above what GitHub accepts', () => {

@@ -17,23 +17,32 @@
 <script setup lang="ts">
 import Gantt, { type FrappeOptions, type FrappeTask, type FrappeViewMode } from 'frappe-gantt'
 import { onBeforeUnmount, shallowRef, watch } from 'vue'
-import type { Task } from '../../domain/Task'
+import type { Task, TaskId } from '../../domain/Task'
 import { toFrappeTasks } from './frappeTasks'
 import 'frappe-gantt/dist/frappe-gantt.css'
 
 const props = defineProps<{
   tasks: Task[]
   viewMode: FrappeViewMode
+  /** The bar to highlight; the detail panel shows this task. */
+  selectedId?: TaskId | null
 }>()
+
+const emit = defineEmits<{
+  /** A bar was clicked. Clicking the selected bar again clears the selection. */
+  select: [id: TaskId | null]
+}>()
+
+const SELECTED_BAR_CLASS = 'gh-gantt-selected'
 
 const container = shallowRef<HTMLDivElement | null>(null)
 // shallowRef, never ref: the library mutates its own internals constantly, and
 // deep reactivity over that destroys performance.
 const gantt = shallowRef<Gantt | null>(null)
 
-function openIssue(frappeTask: FrappeTask): void {
-  const task = props.tasks.find((candidate) => candidate.id === frappeTask.id)
-  if (task) window.open(task.url, '_blank', 'noopener,noreferrer')
+// A click selects rather than opening GitHub; the detail panel links out.
+function selectTask(frappeTask: FrappeTask): void {
+  emit('select', frappeTask.id === props.selectedId ? null : frappeTask.id)
 }
 
 function options(): FrappeOptions {
@@ -44,7 +53,7 @@ function options(): FrappeOptions {
     popup: false,
     infinite_padding: false,
     today_button: true,
-    on_click: openIssue,
+    on_click: selectTask,
   }
 }
 
@@ -70,21 +79,35 @@ function render(): void {
   if (!gantt.value) {
     el.innerHTML = ''
     gantt.value = new Gantt(el, frappeTasks, options())
-    applyWarningTooltips()
+    decorate()
     return
   }
 
   // The instance method. The package README shows `gantt.tasks.refresh()`,
   // which does not exist — following it means the chart silently never updates.
   gantt.value.refresh(frappeTasks)
+  decorate()
+}
+
+/** Everything the library knows nothing about, reapplied after each render. */
+function decorate(): void {
   applyWarningTooltips()
+  applySelection()
+}
+
+function applySelection(): void {
+  const el = container.value
+  if (!el) return
+  for (const group of el.querySelectorAll(`.${SELECTED_BAR_CLASS}`)) group.classList.remove(SELECTED_BAR_CLASS)
+  if (!props.selectedId) return
+  el.querySelector(`.bar-wrapper[data-id="${CSS.escape(props.selectedId)}"]`)?.classList.add(SELECTED_BAR_CLASS)
 }
 
 /**
  * Give warned bars a native tooltip. The library renders each bar group with
  * `data-id`, and an SVG `<title>` child is the tooltip mechanism inside an
  * SVG — there is no popup to hang it off, since popups are disabled so that a
- * click goes straight to the issue.
+ * click selects the task for the detail panel.
  */
 function applyWarningTooltips(): void {
   const el = container.value
@@ -113,8 +136,13 @@ watch(container, () => render(), { immediate: true })
 
 watch(
   () => props.viewMode,
-  (mode) => gantt.value?.change_view_mode(mode),
+  (mode) => {
+    gantt.value?.change_view_mode(mode)
+    decorate()
+  },
 )
+
+watch(() => props.selectedId, applySelection)
 
 onBeforeUnmount(destroy)
 </script>
@@ -124,17 +152,52 @@ onBeforeUnmount(destroy)
     <p v-if="tasks.length === 0" class="rounded border border-gray-200 bg-gray-50 p-6 text-sm text-gray-600">
       Nothing to chart yet.
     </p>
-    <div v-show="tasks.length > 0" ref="container" class="gh-gantt-chart overflow-x-auto" />
+    <!-- No overflow here: the library's own .gantt-container scrolls both ways,
+         which is what keeps its date header sticky. -->
+    <div v-show="tasks.length > 0" ref="container" class="gh-gantt-chart" />
   </div>
 </template>
 
 <style>
+/*
+ * Bars are light green with a darker green outline: a pale fill alone is
+ * barely distinguishable from the white rows, so the stroke carries the
+ * contrast. Colour is reserved for meaning later — status will take it over.
+ */
+.gh-gantt-chart {
+  --g-bar-color: #bbf7d0;
+  --g-bar-border: #15803d;
+  --g-arrow-color: #374151;
+}
+
+/*
+ * frappe sets the container's inline height to the full chart height, so it
+ * never scrolls vertically and the date header scrolls off the page. Capping
+ * it makes the container scroll, and the library's header is already
+ * `position: sticky; top: 0` inside it.
+ */
+.gh-gantt-chart .gantt-container {
+  max-height: calc(100vh - 16rem);
+  min-height: 16rem;
+}
+
 .gh-gantt-chart .bar-wrapper {
   cursor: pointer;
 }
 
+.gh-gantt-chart .bar-wrapper .bar {
+  stroke-width: 1;
+  outline: none;
+}
+
 /* Warned tasks: the dates behind the bar were guessed or corrected. */
 .gh-gantt-chart .gh-gantt-warned .bar {
-  fill: #f59e0b;
+  fill: #fcd34d;
+  stroke: #b45309;
+}
+
+.gh-gantt-chart .gh-gantt-selected .bar {
+  stroke: #14532d;
+  stroke-width: 3;
 }
 </style>

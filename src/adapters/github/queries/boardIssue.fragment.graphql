@@ -1,0 +1,35 @@
+# Everything mapIssue reads. Shared by the board query and the date mutation,
+# so an issue returned by a save maps exactly like one loaded by the board.
+fragment BoardIssue on Issue {
+  id
+  number
+  title
+  url
+  createdAt
+  repository { nameWithOwner }
+  viewerCanSetFields
+  milestone { title dueOn }
+  issueFieldValues(first: 20) {
+    nodes {
+      __typename
+      ... on IssueFieldDateValue {
+        value
+        field { ... on IssueFieldDate { name } }
+      }
+      ... on IssueFieldNumberValue {
+        numberValue: value
+        field { ... on IssueFieldNumber { name } }
+      }
+      ... on IssueFieldSingleSelectValue {
+        optionName: name
+        field { ... on IssueFieldSingleSelect { name } }
+      }
+    }
+  }
+  blockedBy(first: 50) {
+    nodes { id number title state repository { nameWithOwner } }
+  }
+  blocking(first: 50) {
+    nodes { id number title state repository { nameWithOwner } }
+  }
+}

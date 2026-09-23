@@ -26,8 +26,12 @@
  *   - `prf` at **creation** time reports only whether the authenticator can do
  *     it (`enabled`); many authenticators will not return a value there.
  *   - `prf` at **assertion** time is where the secret actually comes from.
- * So enrolment creates the credential, then immediately asserts once to derive
- * the key. Everything is feature-detected; a failure anywhere falls back to
+ * So enrolment asks for a PRF result at creation and uses it when one comes
+ * back — one prompt. When none does, the key has to come from an assertion,
+ * and that is left to `finishEnrolment` behind a click of its own: browsers
+ * reject a second prompt fired straight after the first without a fresh user
+ * gesture, which surfaces as a "dismissed" prompt the user never saw.
+ * Everything is feature-detected; a failure anywhere falls back to
  * session-only storage rather than degrading to plaintext at rest.
  */
 
@@ -44,6 +48,20 @@ export interface EncryptedToken {
   iv: Uint8Array
   ciphertext: Uint8Array
 }
+
+/**
+ * A passkey that exists but has not yet produced a key: creation returned no
+ * PRF result. Held in memory only, so a retry asks for the same passkey
+ * rather than creating another.
+ */
+export interface PendingPasskey {
+  credentialId: Uint8Array
+  salt: Uint8Array
+}
+
+export type EnrolmentResult =
+  | { status: 'done'; record: EncryptedToken }
+  | { status: 'pending'; pending: PendingPasskey }
 
 /** Why a passkey path was unavailable, for an honest message in the UI. */
 export type PasskeyFailure = 'unsupported' | 'declined' | 'no-prf' | 'failed'
@@ -121,16 +139,30 @@ function toBytes(source: BufferSource): Uint8Array {
   return new Uint8Array(source as ArrayBufferLike).slice()
 }
 
-function prfResult(credential: PublicKeyCredential): Uint8Array {
+/** The PRF output on a credential, or null when the authenticator gave none. */
+function optionalPrfResult(credential: PublicKeyCredential): Uint8Array | null {
   const first = credential.getClientExtensionResults().prf?.results?.first
-  if (!first) {
+  if (!first) return null
+  const bytes = toBytes(first)
+  return bytes.byteLength === 0 ? null : bytes
+}
+
+function prfResult(credential: PublicKeyCredential): Uint8Array {
+  const bytes = optionalPrfResult(credential)
+  if (!bytes) {
     throw new PasskeyError('no-prf', 'This passkey cannot derive an encryption key (no PRF result).')
   }
-  const bytes = toBytes(first)
-  if (bytes.byteLength === 0) {
-    throw new PasskeyError('no-prf', 'This passkey returned an empty PRF result.')
-  }
   return bytes
+}
+
+async function encryptToken(token: string, key: CryptoKey, pending: PendingPasskey): Promise<EncryptedToken> {
+  const iv = randomBytes(IV_BYTES)
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv: iv as BufferSource },
+    key,
+    new TextEncoder().encode(token) as BufferSource,
+  )
+  return { credentialId: pending.credentialId, salt: pending.salt, iv, ciphertext: toBytes(ciphertext) }
 }
 
 function asPasskeyError(cause: unknown, fallback: PasskeyFailure): PasskeyError {
@@ -162,13 +194,18 @@ async function deriveKey(credentialId: Uint8Array, salt: Uint8Array): Promise<Cr
 }
 
 /**
- * Create a passkey and encrypt the token with a key derived from it. Costs the
- * user two prompts: one to create the credential, one to derive the key.
+ * Create a passkey and, if the authenticator hands back a PRF result at
+ * creation, encrypt the token with it — one prompt. Otherwise the passkey is
+ * returned as pending, for `finishEnrolment` to complete on a later click.
  */
-export async function encryptWithNewPasskey(token: string, label: string): Promise<EncryptedToken> {
+export async function encryptWithNewPasskey(token: string, label: string): Promise<EnrolmentResult> {
   if (!(await isPasskeyEncryptionAvailable())) {
     throw new PasskeyError('unsupported', 'This browser cannot encrypt with a passkey.')
   }
+
+  // Chosen before creation so the creation-time PRF evaluates the same input
+  // every later assertion will.
+  const salt = randomBytes(KEY_BYTES)
 
   try {
     const credential = (await navigator.credentials.create({
@@ -182,26 +219,37 @@ export async function encryptWithNewPasskey(token: string, label: string): Promi
           { type: 'public-key', alg: -257 },
         ],
         authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
-        extensions: { prf: {} },
+        extensions: { prf: { eval: { first: salt as BufferSource } } },
       },
     })) as PublicKeyCredential | null
 
     if (!credential) throw new PasskeyError('declined', 'Passkey creation was cancelled.')
     if (credential.getClientExtensionResults().prf?.enabled === false) {
-      throw new PasskeyError('no-prf', 'This authenticator does not support the PRF extension.')
+      throw new PasskeyError(
+        'no-prf',
+        'This authenticator does not support the PRF extension. You can delete the gh-gantt passkey it created.',
+      )
     }
 
-    const credentialId = toBytes(credential.rawId)
-    const salt = randomBytes(KEY_BYTES)
-    const key = await deriveKey(credentialId, salt)
-    const iv = randomBytes(IV_BYTES)
-    const ciphertext = await crypto.subtle.encrypt(
-      { name: 'AES-GCM', iv: iv as BufferSource },
-      key,
-      new TextEncoder().encode(token) as BufferSource,
-    )
+    const pending: PendingPasskey = { credentialId: toBytes(credential.rawId), salt }
+    const prfOutput = optionalPrfResult(credential)
+    if (!prfOutput) return { status: 'pending', pending }
 
-    return { credentialId, salt, iv, ciphertext: toBytes(ciphertext) }
+    const key = await keyFromPrf(prfOutput, salt)
+    return { status: 'done', record: await encryptToken(token, key, pending) }
+  } catch (cause) {
+    throw asPasskeyError(cause, 'failed')
+  }
+}
+
+/**
+ * Use a passkey created by `encryptWithNewPasskey` to derive its key and
+ * encrypt the token. Prompts the user, so call it from a click.
+ */
+export async function finishEnrolment(token: string, pending: PendingPasskey): Promise<EncryptedToken> {
+  try {
+    const key = await deriveKey(pending.credentialId, pending.salt)
+    return await encryptToken(token, key, pending)
   } catch (cause) {
     throw asPasskeyError(cause, 'failed')
   }
