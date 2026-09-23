@@ -18,18 +18,30 @@
 import { computed, nextTick, ref, useId } from 'vue'
 import type { LinkedIssue, TaskId } from '../../domain/Task'
 
-/** A loaded issue that could be linked; `reason` says why it cannot, if it cannot. */
+/** An issue that could be linked; `reason` says why it cannot, if it cannot. */
 export interface LinkCandidate {
   id: TaskId
   number: number
   title: string
   reason: string | null
+  /** Shown instead of "#number", e.g. "acme/api#9" for another repository. */
+  label?: string
+  /** A short tag after the title, e.g. "not loaded". */
+  note?: string
+}
+
+/** An issue the text names but the board has not loaded: one request to fetch it. */
+export interface LookupOffer {
+  label: string
+  /** Resolves to the issue as a candidate, or to an error message. */
+  find: () => Promise<LinkCandidate | string>
 }
 
 /**
  * One direction of blocking links — "Blocked by" or "Blocks" — with a picker
  * over the loaded issues and a confirm step before removing. Picking from
- * what is loaded costs no requests; issues not on the board come later.
+ * what is loaded costs no requests. An issue that is not loaded can be named
+ * by "#123", "owner/repo#123" or its URL, and is fetched once, on request.
  */
 const props = defineProps<{
   heading: string
@@ -40,6 +52,8 @@ const props = defineProps<{
   /** Both resolve to an error message, or null on success. Omit for read-only. */
   add?: (id: TaskId) => Promise<string | null>
   remove?: (id: TaskId) => Promise<string | null>
+  /** For text naming an issue that is not loaded, the lookup to offer; else null. */
+  lookup?: (text: string) => LookupOffer | null
 }>()
 
 const emit = defineEmits<{
@@ -56,15 +70,30 @@ const busy = ref(false)
 const error = ref<string | null>(null)
 const confirming = ref<TaskId | null>(null)
 const input = ref<HTMLInputElement | null>(null)
+/** The issue a lookup found, offered first until the text changes. */
+const found = ref<LinkCandidate | null>(null)
 
-// "#12", "12" or words from the title.
-const options = computed(() => {
+type Option = { kind: 'candidate'; candidate: LinkCandidate } | { kind: 'lookup'; offer: LookupOffer }
+
+const offer = computed(() => (props.lookup && !found.value ? props.lookup(query.value) : null))
+
+// "#12", "12" or words from the title; then a found issue first, and a lookup last.
+const options = computed<Option[]>(() => {
   const q = query.value.trim().toLowerCase().replace(/^#/, '')
   const matches = q
     ? props.candidates.filter((c) => String(c.number).startsWith(q) || c.title.toLowerCase().includes(q))
     : props.candidates
-  return matches.slice(0, MAX_OPTIONS)
+  const list: Option[] = matches.slice(0, MAX_OPTIONS).map((candidate) => ({ kind: 'candidate', candidate }))
+  if (found.value) list.unshift({ kind: 'candidate', candidate: found.value })
+  if (offer.value) list.push({ kind: 'lookup', offer: offer.value })
+  return list
 })
+
+function onInput(): void {
+  active.value = 0
+  found.value = null
+  error.value = null
+}
 
 async function openPicker(): Promise<void> {
   picking.value = true
@@ -78,6 +107,7 @@ async function openPicker(): Promise<void> {
 function closePicker(): void {
   picking.value = false
   query.value = ''
+  found.value = null
 }
 
 function move(step: number): void {
@@ -97,10 +127,34 @@ async function run(action: () => Promise<string | null>): Promise<boolean> {
   }
 }
 
-async function choose(option: LinkCandidate | undefined): Promise<void> {
-  if (!option || option.reason || !props.add || busy.value) return
+async function choose(option: Option | undefined): Promise<void> {
+  if (!option || busy.value) return
+  if (option.kind === 'lookup') {
+    await lookUp(option.offer)
+    return
+  }
   const add = props.add
-  if (await run(() => add(option.id))) closePicker()
+  if (option.candidate.reason || !add) return
+  if (await run(() => add(option.candidate.id))) closePicker()
+}
+
+/** Fetch the named issue and offer it, rather than linking it unseen. */
+async function lookUp(target: LookupOffer): Promise<void> {
+  busy.value = true
+  error.value = null
+  try {
+    const result = await target.find()
+    if (typeof result === 'string') {
+      error.value = result
+    } else {
+      found.value = result
+      active.value = 0
+    }
+  } finally {
+    // The box stays focused throughout (read-only, not disabled, while busy),
+    // so Enter straight after the result appears picks it.
+    busy.value = false
+  }
 }
 
 async function confirmRemove(id: TaskId): Promise<void> {
@@ -182,10 +236,11 @@ async function confirmRemove(id: TaskId): Promise<void> {
         :aria-controls="listId"
         :aria-activedescendant="options[active] ? `${listId}-${active}` : undefined"
         :aria-label="addLabel"
-        placeholder="Number or title"
-        :disabled="busy"
+        placeholder="Number, title, #123 or issue URL"
+        :readonly="busy"
+        :aria-busy="busy"
         class="w-full rounded border border-gray-300 px-2 py-1"
-        @input="active = 0"
+        @input="onInput"
         @keydown.down.prevent="move(1)"
         @keydown.up.prevent="move(-1)"
         @keydown.enter.prevent="choose(options[active])"
@@ -199,23 +254,32 @@ async function confirmRemove(id: TaskId): Promise<void> {
         <li
           v-for="(option, index) in options"
           :id="`${listId}-${index}`"
-          :key="option.id"
+          :key="option.kind === 'lookup' ? 'lookup' : option.candidate.id"
           role="option"
           :aria-selected="index === active"
-          :aria-disabled="option.reason !== null"
+          :aria-disabled="option.kind === 'candidate' && option.candidate.reason !== null"
           class="cursor-pointer px-2 py-1"
           :class="[
             index === active ? 'bg-gray-100' : '',
-            option.reason ? 'cursor-not-allowed text-gray-400' : '',
+            option.kind === 'candidate' && option.candidate.reason ? 'cursor-not-allowed text-gray-400' : '',
           ]"
           @mouseenter="active = index"
           @mousedown.prevent="choose(option)"
         >
-          <span>#{{ option.number }} {{ option.title }}</span>
-          <span v-if="option.reason" class="block text-xs">{{ option.reason }}</span>
+          <template v-if="option.kind === 'lookup'">
+            <span class="italic">{{ busy ? 'Looking up…' : `Look up ${option.offer.label}` }}</span>
+            <span class="block text-xs text-gray-500">Fetches it from GitHub.</span>
+          </template>
+          <template v-else>
+            <span>{{ option.candidate.label ?? `#${option.candidate.number}` }} {{ option.candidate.title }}</span>
+            <span v-if="option.candidate.note" class="ml-1 rounded bg-gray-100 px-1 text-xs text-gray-600">
+              {{ option.candidate.note }}
+            </span>
+            <span v-if="option.candidate.reason" class="block text-xs">{{ option.candidate.reason }}</span>
+          </template>
         </li>
         <li v-if="options.length === 0" class="px-2 py-1 text-gray-500">
-          No loaded issue matches.
+          No loaded issue matches. Type <code>#123</code> or paste an issue URL to find another.
         </li>
       </ul>
       <button type="button" class="mt-1 text-xs underline" @click="closePicker">Cancel</button>

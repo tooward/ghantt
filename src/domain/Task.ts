@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+import type { DateSource } from './dateResolution'
+
 export type TaskId = string
 
 /**
@@ -50,6 +52,13 @@ export interface Task {
   blocking: LinkedIssue[]
   /** The Effort field's value as displayed — a number or a select option name. */
   effort: string | null
+  /**
+   * Effort in working days, from a Number field only and only when above zero.
+   * A single-select Effort is shown via `effort` but never calculated with.
+   */
+  effortDays: number | null
+  /** Where each date came from: a field, Effort, the milestone, a default or the creation date. */
+  dateSources: { start: DateSource; due: DateSource }
   /**
    * The user may set this issue's fields. Not proof the token can: a
    * read-only token only finds out on save.

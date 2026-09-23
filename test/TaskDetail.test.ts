@@ -35,6 +35,8 @@ const task: Task = {
   ],
   blocking: [],
   effort: 'M',
+  effortDays: null,
+  dateSources: { start: 'field', due: 'field' },
   canSetFields: true,
   warnings: [],
 }
@@ -64,7 +66,7 @@ describe('TaskDetail', () => {
 
     expect(text).toContain('Thu 1 Oct 2026')
     expect(text).toContain('Tue 15 Dec 2026')
-    expect(text).toContain('75 days')
+    expect(text).toContain('54 working days')
     expect(text).toContain('M')
     wrapper.unmount()
   })
@@ -136,7 +138,7 @@ describe('TaskDetail', () => {
       const wrapper = mountEditable(save)
 
       await wrapper.get('#detail-due').setValue('2026-12-31')
-      expect(wrapper.text()).toContain('91 days')
+      expect(wrapper.text()).toContain('66 working days')
       await wrapper.get('form').trigger('submit')
       await flushPromises()
 
@@ -369,6 +371,253 @@ describe('TaskDetail', () => {
       await wrapper.setProps({ task: { ...self, blockers: [] } })
 
       expect((wrapper.get('#detail-due').element as HTMLInputElement).value).toBe('2026-12-31')
+    })
+  })
+
+  describe('linking an issue that is not loaded', () => {
+    const self: Task = { ...task, dependsOn: [], blockers: [], blocking: [] }
+    const board = () => [self, other('B', 170)]
+    /** Every fetch made, so a test can prove typing alone makes none. */
+    let fetches: number[] = []
+    // Stands in for the store: "#n" names issue n in this repository.
+    const findIssue = (pool: Map<number, Task>) => vi.fn((text: string) => {
+      const match = /^#?(\d+)$/.exec(text.trim())
+      if (!match) return null
+      const number = Number(match[1])
+      return {
+        label: `#${number}`,
+        run: async () => {
+          fetches.push(number)
+          return pool.get(number) ?? `There is no issue #${number}.`
+        },
+      }
+    })
+
+    function mountLookup(pool: Map<number, Task>, link = vi.fn(async () => null)) {
+      fetches = []
+      const find = findIssue(pool)
+      const wrapper = mount(TaskDetail, {
+        props: { task: self, tasks: board(), link, unlink: vi.fn(), findIssue: find },
+        attachTo: document.body,
+      })
+      return { wrapper, link, find }
+    }
+
+    async function type(wrapper: ReturnType<typeof mountLookup>['wrapper'], text: string) {
+      await wrapper.findAll('button').find((b) => b.text() === '+ Add blocker')!.trigger('click')
+      const input = wrapper.get('input[aria-label="Add blocker"]')
+      await input.setValue(text)
+      return input
+    }
+
+    const options = (wrapper: ReturnType<typeof mountLookup>['wrapper']) =>
+      wrapper.findAll('[role="option"]').map((o) => o.text())
+
+    it('offers a lookup for a number that is not loaded, and none for one that is', async () => {
+      const { wrapper } = mountLookup(new Map())
+
+      const input = await type(wrapper, '#999')
+      expect(options(wrapper).at(-1)).toContain('Look up #999')
+
+      await input.setValue('#170')
+      expect(options(wrapper)).toEqual(['#170 Issue 170'])
+      wrapper.unmount()
+    })
+
+    it('fetches on request, shows what it found, and links only when that is picked', async () => {
+      const { wrapper, link } = mountLookup(new Map([[999, other('Z', 999)]]))
+      const input = await type(wrapper, '#999')
+
+      // Typing alone never fetches; choosing the lookup fetches once.
+      expect(fetches).toEqual([])
+      await input.trigger('keydown', { key: 'Enter' })
+      await flushPromises()
+      expect(fetches).toEqual([999])
+
+      expect(link).not.toHaveBeenCalled()
+      expect(options(wrapper)[0]).toContain('#999 Issue 999')
+      expect(options(wrapper)[0]).toContain('not on the chart')
+
+      await input.trigger('keydown', { key: 'Enter' })
+      await flushPromises()
+      expect(link).toHaveBeenCalledWith('A', 'Z')
+      wrapper.unmount()
+    })
+
+    it('shows the error when there is no such issue', async () => {
+      const { wrapper, link } = mountLookup(new Map())
+      const input = await type(wrapper, '#404')
+
+      await input.trigger('keydown', { key: 'Enter' })
+      await flushPromises()
+
+      expect(wrapper.get('[role="alert"]').text()).toBe('There is no issue #404.')
+      expect(link).not.toHaveBeenCalled()
+      wrapper.unmount()
+    })
+
+    it('flags a found issue that would loop', async () => {
+      // Y is not loaded, and already waits on this issue.
+      const { wrapper, link } = mountLookup(new Map([[500, other('Y', 500, ['A'])]]))
+      const input = await type(wrapper, '#500')
+
+      await input.trigger('keydown', { key: 'Enter' })
+      await flushPromises()
+      expect(options(wrapper)[0]).toContain('already waits on this issue')
+
+      await input.trigger('keydown', { key: 'Enter' })
+      await flushPromises()
+      expect(link).not.toHaveBeenCalled()
+      wrapper.unmount()
+    })
+  })
+
+  describe('Effort', () => {
+    // Thu 1 Oct – Mon 5 Oct is three working days (independently worked out).
+    const shortTask: Task = {
+      ...task,
+      start: new Date(2026, 9, 1),
+      due: new Date(2026, 9, 5),
+      effortDays: 2,
+      blockers: [],
+      blocking: [],
+    }
+    const editable = { start: null, due: null, effort: null }
+
+    function mountEffort(save = vi.fn(async () => null), overrides: Partial<Task> = {}) {
+      const wrapper = mount(TaskDetail, {
+        props: { task: { ...shortTask, ...overrides }, tasks: [shortTask], editability: editable, save },
+        attachTo: document.body,
+      })
+      return { wrapper, save }
+    }
+
+    const saveButton = (wrapper: ReturnType<typeof mountEffort>['wrapper']) =>
+      wrapper.findAll('button').find((b) => ['Save', 'Save anyway', 'Saving…'].includes(b.text()))!
+
+    it('shows Length in working days, counting both ends, and Effort in its box', () => {
+      const { wrapper } = mountEffort()
+
+      expect(wrapper.text()).toContain('3 working days')
+      expect((wrapper.get('#detail-effort').element as HTMLInputElement).value).toBe('2')
+      wrapper.unmount()
+    })
+
+    it('sends only a changed Effort, as a number', async () => {
+      const { wrapper, save } = mountEffort()
+
+      await wrapper.get('#detail-effort').setValue('2.5')
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+
+      expect(save).toHaveBeenCalledWith({ effort: 2.5 })
+      wrapper.unmount()
+    })
+
+    it('clears Effort when the box is emptied', async () => {
+      const { wrapper, save } = mountEffort()
+
+      await wrapper.get('#detail-effort').setValue('')
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+
+      expect(save).toHaveBeenCalledWith({ effort: null })
+      wrapper.unmount()
+    })
+
+    it('warns, and offers Save anyway, when the dates are shorter than Effort', async () => {
+      const { wrapper, save } = mountEffort()
+
+      await wrapper.get('#detail-effort').setValue('5')
+
+      expect(wrapper.get('[role="status"]').text()).toContain('Start–End gives 3 working days; Effort is 5 days.')
+      expect(saveButton(wrapper).text()).toBe('Save anyway')
+      expect(saveButton(wrapper).attributes('disabled')).toBeUndefined()
+
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+      expect(save).toHaveBeenCalledWith({ effort: 5 })
+      wrapper.unmount()
+    })
+
+    it('warns when shortening the End below Effort', async () => {
+      const { wrapper } = mountEffort()
+
+      // Thu 1 – Thu 1 is one working day; Effort is two.
+      await wrapper.get('#detail-due').setValue('2026-10-01')
+
+      expect(wrapper.text()).toContain('Start–End gives 1 working day; Effort is 2 days.')
+      expect(saveButton(wrapper).text()).toBe('Save anyway')
+      wrapper.unmount()
+    })
+
+    it('Set End from Effort fills the End box from Start + Effort, and waits for Save', async () => {
+      const { wrapper, save } = mountEffort()
+
+      await wrapper.get('#detail-effort').setValue('10')
+      const button = wrapper.findAll('button').find((b) => b.text().startsWith('Set End from Effort'))!
+      // Thu 1 Oct plus ten working days ends Wed 14 Oct.
+      expect(button.text()).toContain('Wed 14 Oct 2026')
+      await button.trigger('click')
+
+      expect((wrapper.get('#detail-due').element as HTMLInputElement).value).toBe('2026-10-14')
+      expect(save).not.toHaveBeenCalled()
+      expect(saveButton(wrapper).text()).toBe('Save')
+      wrapper.unmount()
+    })
+
+    it('hides Set End from Effort when the End already matches', async () => {
+      // Thu 1 Oct plus three working days is Mon 5 Oct: already the End.
+      const { wrapper } = mountEffort(undefined, { effortDays: 3 })
+
+      expect(wrapper.findAll('button').some((b) => b.text().startsWith('Set End from Effort'))).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('refuses an Effort that is not above zero', async () => {
+      const { wrapper, save } = mountEffort()
+
+      await wrapper.get('#detail-effort').setValue('0')
+
+      expect(wrapper.text()).toContain('Effort must be a number of days above zero.')
+      expect(saveButton(wrapper).attributes('disabled')).toBeDefined()
+      await wrapper.get('form').trigger('submit')
+      expect(save).not.toHaveBeenCalled()
+      wrapper.unmount()
+    })
+
+    it('shows a single-select Effort as text, with the reason, and no box', () => {
+      const wrapper = mount(TaskDetail, {
+        props: {
+          task: { ...shortTask, effort: 'M', effortDays: null },
+          tasks: [shortTask],
+          editability: { start: null, due: null, effort: '“Effort” is a single-select field here; editing needs a number field.' },
+          save: vi.fn(),
+        },
+      })
+
+      expect(wrapper.find('#detail-effort').exists()).toBe(false)
+      expect(wrapper.text()).toContain('M')
+      expect(wrapper.text()).toContain('single-select field here')
+    })
+
+    it('says where a date came from while it is unchanged', async () => {
+      const { wrapper } = mountEffort(undefined, { dateSources: { start: 'field', due: 'effort' } })
+
+      expect(wrapper.text()).toContain('(from Effort)')
+      await wrapper.get('#detail-due').setValue('2026-10-09')
+      expect(wrapper.text()).not.toContain('(from Effort)')
+      wrapper.unmount()
+    })
+
+    it('keeps an unsaved Effort when a link change hands back a new task', async () => {
+      const { wrapper } = mountEffort()
+
+      await wrapper.get('#detail-effort').setValue('4')
+      await wrapper.setProps({ task: { ...shortTask, blockers: [] } })
+
+      expect((wrapper.get('#detail-effort').element as HTMLInputElement).value).toBe('4')
+      wrapper.unmount()
     })
   })
 })

@@ -32,6 +32,8 @@ function task(id: TaskId, dependsOn: TaskId[] = []): Task {
     blockers: [],
     blocking: [],
     effort: null,
+    effortDays: null,
+    dateSources: { start: 'field', due: 'field' },
     canSetFields: true,
     warnings: [],
   }
@@ -87,6 +89,28 @@ describe('GanttChart', () => {
     await wrapper.vm.$nextTick()
 
     expect(wrapper.element.querySelectorAll('.bar-wrapper')).toHaveLength(1)
+  })
+
+  it('draws arrows from the blocker’s end to the blocked bar’s start', async () => {
+    const wrapper = await mountChart([task('a'), task('b', ['a'])])
+    const el = wrapper.element
+
+    const barBox = (id: string) => {
+      const bar = el.querySelector(`.bar-wrapper[data-id="${id}"] .bar`)!
+      const n = (name: string) => Number(bar.getAttribute(name))
+      return { x: n('x'), y: n('y'), width: n('width'), height: n('height') }
+    }
+    const from = barBox('a')
+    const to = barBox('b')
+    const d = el.querySelector('.arrow path[data-from="a"][data-to="b"]')!.getAttribute('d')!
+    const [startX, startY] = d.match(/^M (-?[\d.]+) (-?[\d.]+)/)!.slice(1).map(Number)
+
+    expect(startX).toBeCloseTo(from.x + from.width, 0)
+    expect(startY).toBeCloseTo(from.y + from.height / 2, 0)
+    // The last point before the head sits just left of the blocked bar's start.
+    const body = d.split(' m ')[0].trim().split(' ')
+    expect(Number(body.at(-2))).toBeCloseTo(to.x - 2, 0)
+    expect(Number(body.at(-1))).toBeCloseTo(to.y + to.height / 2, 0)
   })
 
   it('selects a task on click, and clears it on a second click, without opening GitHub', async () => {

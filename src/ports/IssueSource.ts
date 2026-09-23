@@ -41,4 +41,9 @@ export interface RepoRef {
  */
 export interface IssueSource {
   fetchPage(repo: RepoRef, cursor: string | null, pageSize: number): Promise<IssuePage>
+  /**
+   * One issue by number, for linking an issue that is not on the board.
+   * Optional: a source without it simply cannot offer that.
+   */
+  fetchIssue?(repo: RepoRef, number: number): Promise<Task>
 }

@@ -18,6 +18,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useAuthStore } from '../app/stores/auth'
 import { useBoardStore } from '../app/stores/board'
+import BoardToolbar from './components/BoardToolbar.vue'
 import RateLimitBadge from './components/RateLimitBadge.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
 import BoardView from './views/BoardView.vue'
@@ -114,7 +115,9 @@ onMounted(() => {
       </div>
     </header>
 
-    <main class="mx-auto max-w-5xl px-6 py-10">
+    <BoardToolbar v-if="auth.isConnected" />
+
+    <main class="mx-auto max-w-5xl px-6 pb-10 pt-6">
       <!-- "Remember" was asked for and could not be done (or not yet); say so
            where it will actually be read, which is after the view has switched. -->
       <p
