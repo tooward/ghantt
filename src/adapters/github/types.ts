@@ -86,16 +86,16 @@ export interface BoardIssuesResponse {
   } | null
 }
 
-export interface RepoDateFieldsResponse {
+export interface RepoFieldsResponse {
   repository: {
     issueFields: {
-      /** Only `IssueFieldDate` members carry `id` and `name`; the rest are `{ __typename }`. */
+      /** Every known field type carries `id` and `name`; an unknown one is just `{ __typename }`. */
       nodes: ({ __typename: string; id?: string; name?: string } | null)[] | null
     } | null
   } | null
 }
 
-export interface SetIssueDatesResponse {
+export interface SetIssueFieldsResponse {
   setIssueFieldValue: { issue: GitHubIssueNode | null } | null
 }
 
@@ -103,4 +103,8 @@ export interface SetIssueDatesResponse {
 export interface BlockedByResponse {
   addBlockedBy?: { issue: GitHubIssueNode | null; blockingIssue: GitHubIssueNode | null } | null
   removeBlockedBy?: { issue: GitHubIssueNode | null; blockingIssue: GitHubIssueNode | null } | null
+}
+
+export interface RepoIssueResponse {
+  repository: { issue: GitHubIssueNode | null } | null
 }

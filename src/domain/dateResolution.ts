@@ -14,7 +14,8 @@
  * limitations under the License.
  */
 
-import { addDays, format, isValid, parseISO, subDays } from 'date-fns'
+import { format, isValid, parseISO, startOfDay } from 'date-fns'
+import { countWorkingDays, endAfterWorkingDays, startBeforeWorkingDays, WEEKDAYS, type WorkingCalendar } from './workingDays'
 
 export interface DateInputs {
   /** Raw string from a configured start date field, if the repo has one. */
@@ -24,35 +25,52 @@ export interface DateInputs {
   milestoneDue: string | null
   /** Always present on a GitHub issue — the last rung of the chain. */
   createdAt: string
+  /** Working days of effort, from a Number field; null when unset or not above zero. */
+  effortDays?: number | null
 }
+
+/** Where a resolved date came from, so the UI can say "(from Effort)" and so on. */
+export type DateSource = 'field' | 'effort' | 'milestone' | 'default' | 'created'
 
 export interface ResolvedDates {
   start: Date
   due: Date
+  sources: { start: DateSource; due: DateSource }
   warnings: string[]
 }
 
 export interface DateResolutionConfig {
+  /** Working days a task takes when nothing says otherwise. Start and End both count. */
   defaultTaskDays: number
+  calendar?: WorkingCalendar
 }
 
 export const DEFAULT_TASK_DAYS = 1
 
 /**
  * Turn whatever dates an issue happens to carry into a start and a due date
- * (ARCHITECTURE.md §5.3). First match wins on each chain.
+ * (ARCHITECTURE.md §5.3). First match wins on each chain. Start and End are
+ * both whole days: Oct 1 → Oct 1 is a one-day task.
  *
- * Start: date field -> the resolved due date minus the default duration ->
- * `createdAt`.
+ * Due:   date field -> Start field + Effort (working days) -> milestone due
+ *        -> start + the default length.
+ * Start: date field -> the resolved due date minus Effort -> the resolved due
+ *        date minus the default length -> `createdAt`.
  *
- * Rung 2 deviates slightly from ARCHITECTURE.md §5.3, which names the
- * milestone due date specifically. Backing off from whichever due date won
- * gives the same answer when the milestone is the only source, and avoids a
- * bad case the narrower rule produces: an issue with an explicit due date, no
- * start, and a later milestone would take its start from the milestone, land
- * after its own due date, and have that explicit due date thrown away by the
- * clamp below.
- * Due:   date field -> milestone due -> start plus the default duration.
+ * Only the Start *field* feeds the Effort rung of the due chain, never a
+ * derived start, so the two chains cannot feed each other. Backing off from
+ * whichever due date won (rather than from the milestone specifically) avoids
+ * an issue with an explicit due date, no start, and a later milestone taking
+ * its start from the milestone, landing after its own due date, and having
+ * that due date thrown away by the clamp below.
+ *
+ * Every length is counted in working days through `workingDays.ts`.
+ *
+ * When both dates come from fields and leave fewer working days than Effort,
+ * that is reported as a warning. GitHub itself never checks, so this catches
+ * conflicts written anywhere, not only through this app. It is a warning,
+ * not a correction: Effort is person-days, and two people can finish five
+ * days of effort in three.
  *
  * Issue body lines (`GanttStart:` / `GanttDue:`) were once a rung here too.
  * They were removed as fragile once organisation issue fields existed.
@@ -63,37 +81,73 @@ export const DEFAULT_TASK_DAYS = 1
  */
 export function resolveDates(i: DateInputs, cfg: DateResolutionConfig): ResolvedDates {
   const warnings: string[] = []
+  const calendar = cfg.calendar ?? WEEKDAYS
   const days = Number.isFinite(cfg.defaultTaskDays) && cfg.defaultTaskDays > 0
     ? cfg.defaultTaskDays
     : DEFAULT_TASK_DAYS
+  const effort = typeof i.effortDays === 'number' && Number.isFinite(i.effortDays) && i.effortDays > 0
+    ? i.effortDays
+    : null
 
   const fieldStart = parseOrWarn(i.fieldStart, 'start date field', warnings)
   const fieldDue = parseOrWarn(i.fieldDue, 'due date field', warnings)
   const milestoneDue = parseOrWarn(i.milestoneDue, 'milestone due date', warnings)
   const createdAt = parseOrWarn(i.createdAt, 'issue creation date', warnings)
 
-  // The due candidate is resolved first because rung 3 of the start chain is
-  // defined in terms of it.
-  const dueCandidate = fieldDue ?? milestoneDue
+  // The due candidate is resolved first because the start chain backs off from it.
+  let dueCandidate: { date: Date; source: DateSource } | null = null
+  if (fieldDue) dueCandidate = { date: fieldDue, source: 'field' }
+  else if (fieldStart && effort) dueCandidate = { date: endAfterWorkingDays(fieldStart, effort, calendar), source: 'effort' }
+  else if (milestoneDue) dueCandidate = { date: milestoneDue, source: 'milestone' }
 
-  const start =
-    fieldStart ??
+  let start: Date
+  let startSource: DateSource
+  if (fieldStart) {
+    start = fieldStart
+    startSource = 'field'
+  } else if (dueCandidate && effort) {
+    start = startBeforeWorkingDays(dueCandidate.date, effort, calendar)
+    startSource = 'effort'
+  } else if (dueCandidate) {
     // Only reachable when something gives a due date but nothing gives a start.
-    (dueCandidate ? subDays(dueCandidate, days) : null) ??
-    createdAt ??
-    fallbackStart(warnings)
+    start = startBeforeWorkingDays(dueCandidate.date, days, calendar)
+    startSource = 'default'
+  } else if (createdAt) {
+    start = createdAt
+    startSource = 'created'
+  } else {
+    start = fallbackStart(warnings)
+    startSource = 'created'
+  }
 
-  const due = dueCandidate ?? addDays(start, days)
+  let due = dueCandidate?.date ?? endAfterWorkingDays(start, days, calendar)
+  const dueSource: DateSource = dueCandidate?.source ?? 'default'
 
+  // A same-day task is valid; only an End before the Start is not.
   if (due.getTime() < start.getTime()) {
     warnings.push(
       `Due date (${toIsoDay(due)}) is before the start date (${toIsoDay(start)}); ` +
-        `showing ${days} day${days === 1 ? '' : 's'} from the start instead.`,
+        `showing ${days} working day${days === 1 ? '' : 's'} from the start instead.`,
     )
-    return { start, due: addDays(start, days), warnings }
+    due = endAfterWorkingDays(start, days, calendar)
+    return { start, due, sources: { start: startSource, due: 'default' }, warnings }
   }
 
-  return { start, due, warnings }
+  if (effort && startSource === 'field' && dueSource === 'field') {
+    const available = countWorkingDays(start, due, calendar)
+    if (available < effort) warnings.push(effortConflict(available, effort))
+  }
+
+  return { start, due, sources: { start: startSource, due: dueSource }, warnings }
+}
+
+/** The one wording for an effort conflict, shared by the bar and the panel. */
+export function effortConflict(available: number, effort: number): string {
+  return `Start–End gives ${available} working day${available === 1 ? '' : 's'}; Effort is ${formatDays(effort)}.`
+}
+
+export function formatDays(days: number): string {
+  return `${days} day${days === 1 ? '' : 's'}`
 }
 
 function parseOrWarn(value: string | null | undefined, label: string, warnings: string[]): Date | null {
@@ -103,13 +157,16 @@ function parseOrWarn(value: string | null | undefined, label: string, warnings: 
     warnings.push(`Ignored the ${label}: "${value}" is not a valid date.`)
     return null
   }
-  return parsed
+  // Whole local days only. A timestamp such as `createdAt` carries a time of
+  // day, and comparing it with a derived midnight would put a same-day End
+  // *before* its Start.
+  return startOfDay(parsed)
 }
 
 /** Unreachable for real GitHub data — `createdAt` always parses — but the chain must still end somewhere. */
 function fallbackStart(warnings: string[]): Date {
   warnings.push('No usable date at all; the bar starts today.')
-  return new Date()
+  return startOfDay(new Date())
 }
 
 /**

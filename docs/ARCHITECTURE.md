@@ -220,7 +220,7 @@ fragment BoardIssue on Issue {
 }
 ```
 
-The fragment lives in `queries/boardIssue.fragment.graphql` and is appended to both the board query and the `SetIssueDates` mutation, so an issue returned by a save maps exactly like one loaded by the board. The `AddBlockedBy` / `RemoveBlockedBy` mutations use it too, for both `issue` and `blockingIssue`. The repository's date-field ids come from a separate `RepoDateFields` query (`repository.issueFields`), so a failure there turns editing off rather than breaking the chart.
+The fragment lives in `queries/boardIssue.fragment.graphql` and is appended to both the board query and the `SetIssueFields` mutation, so an issue returned by a save maps exactly like one loaded by the board. The `AddBlockedBy` / `RemoveBlockedBy` mutations use it too, for both `issue` and `blockingIssue`, as does `RepoIssue` (one issue by number, for linking an issue that is not loaded; a PR number answers NOT_FOUND "Could not resolve to an Issue"). The repository's date-field ids come from a separate `RepoFields` query (`repository.issueFields`, with each field's kind), so a failure there turns editing off rather than breaking the chart.
 
 Schema facts confirmed by introspection on 2026-09-17:
 
@@ -240,15 +240,21 @@ Always request `rateLimit` so budget can be surfaced in the UI.
 
 A Gantt bar needs a start and an end. GitHub issues have **no native start/due fields**, so dates are resolved by falling through this chain. First match wins, evaluated per issue.
 
+All lengths are counted in working days through `domain/workingDays.ts` (Monday to Friday for now; calendars are on the roadmap), and Start and End are both whole days — Oct 1 → Oct 1 is one day, which matches frappe-gantt drawing a date-only end to the end of that day. Every parsed date is reduced to its local day first, so a timestamp's time of day never puts a same-day End before its Start.
+
 **Start date:**
 1. `issueFieldValues` — a `IssueFieldDateValue` whose `field.name` matches the configured start-field name (default `"Start"`, case-insensitive)
-2. **The resolved due date** minus the configured default duration — *only if* a due date was found and no start was. (§5.3 originally named `milestone.dueOn` here specifically. Phase 2 widened it to whichever due date won, because the narrow rule mangles a real case: an issue with an explicit due date, no start, and a later milestone took its start from the milestone, landed *after* its own due date, and had that explicit due date overwritten by the due-before-start clamp. When the milestone is the only due source the two rules agree.)
-3. `createdAt` — guaranteed to exist, so a start date is always produced
+2. The resolved due date minus **Effort** (working days), when Effort is set
+3. **The resolved due date** minus the configured default duration — *only if* a due date was found and no start was. (§5.3 originally named `milestone.dueOn` here specifically. Phase 2 widened it to whichever due date won, because the narrow rule mangles a real case: an issue with an explicit due date, no start, and a later milestone took its start from the milestone, landed *after* its own due date, and had that explicit due date overwritten by the due-before-start clamp. When the milestone is the only due source the two rules agree.)
+4. `createdAt` — guaranteed to exist, so a start date is always produced
 
 **Due date:**
 1. `issueFieldValues` — a date field matching the configured due-field name (default `"End"`)
-2. `milestone.dueOn`
-3. Start date + `defaultTaskDays` (default 1)
+2. The Start **field** + Effort (working days). Only the field, never a derived start, so the chains cannot feed each other.
+3. `milestone.dueOn`
+4. Start date + `defaultTaskDays` working days (default 1, i.e. End = Start)
+
+**Effort** is read from a Number issue field (`IssueFieldNumberValue.value`, a Float), only when above zero. A single-select Effort is displayed but never calculated with. When both dates come from fields and `countWorkingDays(start, end) < effort`, a warning is added (so the bar turns amber) — a warning, not a correction. Each task records where its dates came from (`dateSources`: field / effort / milestone / default / created) for the panel.
 
 Body lines (`GanttStart:` / `GanttDue:`, a GanttLab convention) were a rung on both chains until 2026-09-23. They were removed as fragile once organisation issue fields were in place: free text in a body is easy to break by accident and awkward to write back to.
 
@@ -256,7 +262,7 @@ Notes for the implementer:
 
 - **Issue fields are organisation-level.** A personal-account repo returns an empty `issueFieldValues` list. The later steps must therefore always work. Never assume step 1 produces anything.
 - `IssueFieldDateValue.value` is a **String**. Parse it and reject invalid dates — never let `Invalid Date` reach the chart.
-- If due < start after resolution, clamp due to start + `defaultTaskDays` and record a warning on the task. Do not throw.
+- If due < start after resolution, clamp due to start + `defaultTaskDays` working days and record a warning on the task. Due equal to start is a valid one-day task. Do not throw.
 - **Format dates in local time, not with `toISOString()`.** A date-only string like `2026-04-20` parses to local midnight, so `toISOString().slice(0,10)` reports the previous day anywhere east of UTC. Use `date-fns`' `format(date, 'yyyy-MM-dd')` everywhere a date becomes a string, including the strings handed to `frappe-gantt`.
 
 ### 5.4 Dependencies
@@ -416,6 +422,7 @@ Write a local declaration at `src/types/frappe-gantt.d.ts` covering only what we
 - Call `clear()` and drop the instance in `onBeforeUnmount`.
 - Bar click opens `task.url` with `target="_blank"` and `rel="noopener noreferrer"`.
 - Set `readonly: true` in options. Dates are edited in the detail panel, not by dragging bars; dragging is a later step (backlog).
+- Arrows are redrawn after every render (`arrowPaths.ts`, `rerouteArrows` in `GanttChart.vue`): finish-to-start, from the blocker's right end to the blocked bar's start at mid-height. The library's own arrows leave from the blocker's middle; it only redraws them itself while dragging, which is off.
 
 ## 9. Testing
 

@@ -54,8 +54,9 @@ describe('mapIssue — captured live response (frappe/gantt)', () => {
   it('still produces valid dates when issueFieldValues is empty', () => {
     const task = mapIssue(liveNodes[0], cfg)
 
+    // Created Fri 5 May 2017; a one-day default ends that same day.
     expect(day(task.start)).toBe('2017-05-05')
-    expect(day(task.due)).toBe('2017-05-06')
+    expect(day(task.due)).toBe('2017-05-05')
     expect(Number.isNaN(task.start.getTime())).toBe(false)
     expect(Number.isNaN(task.due.getTime())).toBe(false)
   })
@@ -88,8 +89,9 @@ describe('mapIssue — issue date fields', () => {
     const task = mapIssue(syntheticNodes[1], cfg)
 
     expect(() => mapIssue(syntheticNodes[1], cfg)).not.toThrow()
-    // It must not be mistaken for the start field: the milestone rung wins instead.
-    expect(day(task.start)).toBe('2026-04-29')
+    // It must not be mistaken for the start field: the milestone rung wins
+    // instead, and a one-day task on Thu 30 Apr starts that day.
+    expect(day(task.start)).toBe('2026-04-30')
   })
 })
 
@@ -115,6 +117,33 @@ describe('mapIssue — effort', () => {
     expect(mapIssue(syntheticNodes[0], { ...cfg, effortFieldName: 'Size' }).effort).toBeNull()
   })
 
+  it('calculates only with a Number Effort above zero', () => {
+    expect(mapIssue(syntheticNodes[0], cfg).effortDays).toBe(5)
+    // A single-select Effort is shown, but never calculated with.
+    expect(mapIssue(syntheticNodes[1], cfg).effort).toBe('M')
+    expect(mapIssue(syntheticNodes[1], cfg).effortDays).toBeNull()
+  })
+
+  it('fits node 0’s dates to its Effort, so it carries no warning', () => {
+    // Mon 2 – Mon 9 Mar is six working days; Effort is five.
+    expect(mapIssue(syntheticNodes[0], cfg).warnings).toEqual([])
+  })
+
+  it('warns when the dates are shorter than a Number Effort', () => {
+    const node = {
+      ...syntheticNodes[0],
+      issueFieldValues: {
+        nodes: [
+          { __typename: 'IssueFieldDateValue', value: '2026-10-01', field: { name: 'Start' } },
+          { __typename: 'IssueFieldDateValue', value: '2026-10-05', field: { name: 'End' } },
+          { __typename: 'IssueFieldNumberValue', numberValue: 5, field: { name: 'Effort' } },
+        ],
+      },
+    } as GitHubIssueNode
+
+    expect(mapIssue(node, cfg).warnings).toEqual(['Start–End gives 3 working days; Effort is 5 days.'])
+  })
+
   it('does not take another select field for effort', () => {
     // Node 0 also has a Priority select; only the Effort field counts.
     expect(mapIssue(syntheticNodes[0], { ...cfg, effortFieldName: 'Priority' }).effort).toBe('High')
@@ -127,7 +156,7 @@ describe('mapIssue — fallback chain', () => {
     const task = mapIssue(syntheticNodes[2], cfg)
 
     expect(day(task.due)).toBe('2026-04-30')
-    expect(day(task.start)).toBe('2026-04-29')
+    expect(day(task.start)).toBe('2026-04-30')
   })
 })
 

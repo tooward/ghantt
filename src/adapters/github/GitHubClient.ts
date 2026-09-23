@@ -104,7 +104,13 @@ function rateLimitOf(data: unknown): RateLimitInfo | undefined {
  * with the error handling that a GraphQL API demands (see ARCHITECTURE.md §6).
  */
 export class GitHubClient {
-  constructor(private readonly getToken: () => string | null) {}
+  private readonly getToken: () => string | null
+
+  // A plain field, not a constructor parameter property: `erasableSyntaxOnly`
+  // (tsconfig.app.json) forbids syntax that would need compiling away.
+  constructor(getToken: () => string | null) {
+    this.getToken = getToken
+  }
 
   async query<T>(query: string, variables: Record<string, unknown> = {}): Promise<GraphQLResult<T>> {
     const token = this.getToken()

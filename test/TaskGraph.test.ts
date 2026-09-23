@@ -30,6 +30,8 @@ function task(id: TaskId, dependsOn: TaskId[] = []): Task {
     blockers: [],
     blocking: [],
     effort: null,
+    effortDays: null,
+    dateSources: { start: 'field', due: 'field' },
     canSetFields: true,
     warnings: [],
   }

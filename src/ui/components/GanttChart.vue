@@ -18,6 +18,7 @@
 import Gantt, { type FrappeOptions, type FrappeTask, type FrappeViewMode } from 'frappe-gantt'
 import { onBeforeUnmount, shallowRef, watch } from 'vue'
 import type { Task, TaskId } from '../../domain/Task'
+import { finishToStartPath, type BarBox } from './arrowPaths'
 import { toFrappeTasks } from './frappeTasks'
 import 'frappe-gantt/dist/frappe-gantt.css'
 
@@ -93,6 +94,28 @@ function render(): void {
 function decorate(): void {
   applyWarningTooltips()
   applySelection()
+  rerouteArrows()
+}
+
+/**
+ * Redraw every dependency arrow finish-to-start: from the blocker's right end
+ * to the blocked bar's start. The library draws from the blocker's middle.
+ */
+function rerouteArrows(): void {
+  const el = container.value
+  if (!el) return
+  const box = (id: string): BarBox | null => {
+    const bar = el.querySelector(`.bar-wrapper[data-id="${CSS.escape(id)}"] .bar`)
+    if (!bar) return null
+    const read = (name: string) => Number(bar.getAttribute(name))
+    const result = { x: read('x'), y: read('y'), width: read('width'), height: read('height') }
+    return Object.values(result).every(Number.isFinite) ? result : null
+  }
+  for (const path of el.querySelectorAll<SVGPathElement>('.arrow path[data-from][data-to]')) {
+    const from = box(path.dataset.from ?? '')
+    const to = box(path.dataset.to ?? '')
+    if (from && to) path.setAttribute('d', finishToStartPath(from, to))
+  }
 }
 
 function applySelection(): void {

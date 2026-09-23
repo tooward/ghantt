@@ -6,7 +6,7 @@ No backend, no database, no server process. It is a static page that reads issue
 
 ## What it does
 
-- Charts the open issues of one repository, one bar per issue — by default only issues of type **Feature**. Change or clear the Type box on the top row (empty means every type); it suggests the repository's own issue types.
+- Charts the open issues of one repository, one bar per issue — by default only issues of type **Feature**. The repository and type are chosen from the button in the toolbar under the header, which slides down Owner, Repository and Type fields; clear Type to chart every type. It suggests the repository's own issue types.
 - Draws `blocked by` relationships as arrows, so the order of work is visible.
 - Resolves start and due dates from issue date fields or from the milestone — see [Where the dates come from](#where-the-dates-come-from).
 - Edits an issue's Start and End dates, and what it is blocked by and what it blocks, from the detail panel, saving straight to GitHub.
@@ -52,29 +52,35 @@ The mechanism is the WebAuthn `prf` extension plus AES-GCM via WebCrypto — see
 
 ## Where the dates come from
 
-GitHub issues have no start or due date, so each bar's dates are resolved by falling through a chain. The first match wins.
+GitHub issues have no start or due date, so each bar's dates are resolved by falling through a chain. The first match wins. Lengths are counted in **working days (Monday to Friday)**, and Start and End both count — a task from Oct 1 to Oct 1 is one day.
 
 **Start date**
 
 1. An issue **date field** named `Start` (configurable, matched case-insensitively). Issue fields are organisation-level, so personal repositories have none — the rest of the chain always works.
-2. The resolved due date minus the default task length.
-3. The issue's creation date, which always exists.
+2. The resolved due date minus **Effort**, in working days.
+3. The resolved due date minus the default task length.
+4. The issue's creation date, which always exists.
 
 **Due date**
 
 1. An issue **date field** named `End` (configurable).
-2. The milestone's due date.
-3. The start date plus the default task length (1 day by default).
+2. The **Start** field plus **Effort**, in working days.
+3. The milestone's due date.
+4. The start date plus the default task length (1 working day by default, so the End is the Start).
 
-Clicking a bar selects it and shows its start, end, effort and blockers in a panel at the top right of the chart, with a link to the issue in GitHub. Start and End can be changed there and saved to the issue's date fields; only a date you changed is written, so one shown from the milestone or the creation date is never copied into a field by accident. A date is read-only when the repository has no date field of that name, or you cannot set fields on the issue. Effort is read from an issue field named `Effort` — a number or a single select — and is shown, not yet used to compute dates.
+**Effort** is an issue field named `Effort` (configurable) of type **Number**, holding working days — `0.5`, `3`, `20`, whatever your team's sizing is. When Start and End are both set and leave fewer working days than Effort, the bar turns amber and the panel says so, e.g. "Start–End gives 3 working days; Effort is 5 days". That is a warning, not a block: Effort is person-days, and more than one person can share the work. GitHub itself never checks this, so the warning also catches dates changed in GitHub. A single-select Effort field is shown but not calculated with; see [docs/ROADMAP.md](docs/ROADMAP.md) for moving one to a Number field.
+
+Clicking a bar selects it and shows its start, end, effort and blockers in a panel at the top right of the chart, with a link to the issue in GitHub. Start, End and Effort can be changed there and saved to the issue's fields — Length shows the working days between Start and End, **Set End from Effort** fills in End from Start + Effort, and Save becomes **Save anyway** when the dates are shorter than Effort; only a date you changed is written, so one shown from the milestone or the creation date is never copied into a field by accident. A date is read-only when the repository has no date field of that name, or you cannot set fields on the issue. Effort is read from an issue field named `Effort` — a number or a single select — and is shown, not yet used to compute dates.
 
 Field names, the default task length and the page size are all editable in the app's Settings window (the gear icon in the header) and are remembered in local storage. Dates that cannot be parsed are ignored and reported on the bar rather than guessed at; a due date falling before its start is corrected and flagged.
 
 ## Dependencies
 
-An issue's `blocked by` links become arrows pointing from the blocker to the blocked issue.
+An issue's `blocked by` links become finish-to-start arrows: from the right end of the blocker to the start of the blocked issue. When the blocked issue starts before its blocker ends, the arrow runs back along the gap between the rows so it still points into the start.
 
-The detail panel lists both directions — **Blocked by** and **Blocks** — and can change them. **+ Add blocker** / **+ Add blocked issue** opens a picker over the issues already loaded on the chart: type a number or part of a title, then pick with the mouse or the arrow keys and Enter. It makes no requests while you type. Issues that would create a circular dependency are shown greyed out with the reason. Removing a link asks you to confirm first. With the Type box set to Feature only Features are loaded, so for now only they can be picked; picking an issue that is not loaded (by `#number` or URL) is the next step.
+The detail panel lists both directions — **Blocked by** and **Blocks** — and can change them. **+ Add blocker** / **+ Add blocked issue** opens a picker over the issues already loaded on the chart: type a number or part of a title, then pick with the mouse or the arrow keys and Enter. It makes no requests while you type. Issues that would create a circular dependency are shown greyed out with the reason. Removing a link asks you to confirm first.
+
+To link an issue that is not on the chart — a Task or Bug when the board shows Features, say — type `#123`, `owner/repo#123`, or paste its issue URL, and choose **Look up …**. That fetches the one issue (a single request, only when you choose it), shows it, and links it when you pick it. Pull requests cannot be picked. A looked-up issue's own links count when checking for loops.
 
 Some edges cannot be drawn: `blocked by` can name a closed issue, an issue in another repository, or one that has not been paged in yet. Those are dropped and counted in a notice rather than breaking the chart — load more issues and the ones that were merely unloaded turn into real arrows. Circular dependencies are detected, one edge is dropped to break the loop, and that too is reported.
 
@@ -84,6 +90,7 @@ Some edges cannot be drawn: `blocked by` can name a closed issue, an issue in an
 |---|---|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Target architecture, stack, data flow and locked design decisions. |
 | [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) | The phased build plan and its acceptance criteria. |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | What is planned next, later features, and what has shipped. |
 
 ## Prior art
 

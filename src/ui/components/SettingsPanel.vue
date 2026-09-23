@@ -90,11 +90,11 @@ function onDialogClick(event: MouseEvent) {
           v-model="settings.effortFieldName"
           class="mt-1 w-full rounded border border-gray-300 px-3 py-2"
         >
-        <p class="mt-1 text-xs text-gray-500">A number or single-select issue field, shown in the detail panel.</p>
+        <p class="mt-1 text-xs text-gray-500">A Number issue field, in working days. A single-select one is shown but not calculated with.</p>
       </div>
 
       <div>
-        <label for="default-days" class="block text-sm font-medium">Default task length (days)</label>
+        <label for="default-days" class="block text-sm font-medium">Default task length (working days)</label>
         <input
           id="default-days"
           v-model.number="settings.defaultTaskDays"
@@ -103,7 +103,7 @@ function onDialogClick(event: MouseEvent) {
           max="365"
           class="mt-1 w-full rounded border border-gray-300 px-3 py-2"
         >
-        <p class="mt-1 text-xs text-gray-500">Used when an issue has no due date of its own.</p>
+        <p class="mt-1 text-xs text-gray-500">Used when an issue has no End and no Effort. Start and End both count, so 1 means a one-day task.</p>
       </div>
 
       <div>

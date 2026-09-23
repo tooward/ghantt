@@ -22,7 +22,10 @@ export interface MapConfig {
   /** Name of the issue date field holding the start date, matched case-insensitively. */
   startFieldName: string
   dueFieldName: string
-  /** A number or single-select issue field; shown as-is, not yet used for dates. */
+  /**
+   * Effort, in working days. A Number field is calculated with; a
+   * single-select one is only shown, until it is migrated.
+   */
   effortFieldName: string
   defaultTaskDays: number
 }
@@ -42,12 +45,14 @@ export const DEFAULT_MAP_CONFIG: MapConfig = {
  * handed over unparsed and the domain layer decides whether it is usable.
  */
 export function mapIssue(node: GitHubIssueNode, cfg: MapConfig): Task {
-  const { start, due, warnings } = resolveDates(
+  const effortDays = effortNumber(node, cfg.effortFieldName)
+  const { start, due, sources, warnings } = resolveDates(
     {
       fieldStart: dateFieldValue(node, cfg.startFieldName),
       fieldDue: dateFieldValue(node, cfg.dueFieldName),
       milestoneDue: node.milestone?.dueOn ?? null,
       createdAt: node.createdAt,
+      effortDays,
     },
     { defaultTaskDays: cfg.defaultTaskDays },
   )
@@ -67,6 +72,8 @@ export function mapIssue(node: GitHubIssueNode, cfg: MapConfig): Task {
     blockers: blockedBy.map((ref) => linkedIssue(ref, node)),
     blocking: (node.blocking?.nodes ?? []).filter(Boolean).map((ref) => linkedIssue(ref, node)),
     effort: effortValue(node, cfg.effortFieldName),
+    effortDays,
+    dateSources: sources,
     canSetFields: node.viewerCanSetFields === true,
     warnings,
   }
@@ -95,6 +102,12 @@ function effortValue(node: GitHubIssueNode, fieldName: string): string | null {
   if (!value) return null
   if (typeof value.numberValue === 'number') return String(value.numberValue)
   return value.optionName ?? null
+}
+
+/** Working days from a Number field, or null: unset, not above zero, or a select field. */
+function effortNumber(node: GitHubIssueNode, fieldName: string): number | null {
+  const value = fieldValueNode(node, fieldName, ['IssueFieldNumberValue'])?.numberValue
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null
 }
 
 function fieldValueNode(node: GitHubIssueNode, fieldName: string, typenames: string[]) {

@@ -1,0 +1,8 @@
+# One issue by number, for linking an issue that is not on the board. Run
+# once when the user picks "Look up #123", never per keystroke.
+query RepoIssue($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
+    issue(number: $number) { ...BoardIssue }
+  }
+  rateLimit { cost limit remaining resetAt }
+}

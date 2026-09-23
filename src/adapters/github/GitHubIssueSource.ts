@@ -16,20 +16,36 @@
 
 import type { Task, TaskId } from '../../domain/Task'
 import type { IssuePage, IssueSource, RepoRef } from '../../ports/IssueSource'
-import type { DateField, DateFieldValue, IssueWriter } from '../../ports/IssueWriter'
+import type { FieldKind, FieldValue, IssueFieldRef, IssueWriter } from '../../ports/IssueWriter'
 import addBlockedByDocument from './queries/addBlockedBy.graphql?raw'
 import boardIssueFragment from './queries/boardIssue.fragment.graphql?raw'
 import boardIssuesDocument from './queries/boardIssues.graphql?raw'
 import removeBlockedByDocument from './queries/removeBlockedBy.graphql?raw'
-import repoDateFieldsQuery from './queries/repoDateFields.graphql?raw'
-import setIssueDatesDocument from './queries/setIssueDates.graphql?raw'
+import repoFieldsQuery from './queries/repoFields.graphql?raw'
+import repoIssueDocument from './queries/repoIssue.graphql?raw'
+import setIssueFieldsDocument from './queries/setIssueFields.graphql?raw'
 import { GitHubClient, GitHubError, type RateLimitInfo } from './GitHubClient'
 import { mapIssue, type MapConfig } from './mapIssue'
-import type { BlockedByResponse, BoardIssuesResponse, RepoDateFieldsResponse, SetIssueDatesResponse } from './types'
+import type {
+  BlockedByResponse,
+  BoardIssuesResponse,
+  RepoFieldsResponse,
+  RepoIssueResponse,
+  SetIssueFieldsResponse,
+} from './types'
 
 // GraphQL wants a fragment's definition in the same document that spreads it.
 const boardIssuesQuery = `${boardIssuesDocument}\n${boardIssueFragment}`
-const setIssueDatesMutation = `${setIssueDatesDocument}\n${boardIssueFragment}`
+const repoIssueQuery = `${repoIssueDocument}\n${boardIssueFragment}`
+const setIssueFieldsMutation = `${setIssueFieldsDocument}\n${boardIssueFragment}`
+
+const FIELD_KINDS: Record<string, FieldKind> = {
+  IssueFieldDate: 'date',
+  IssueFieldNumber: 'number',
+  IssueFieldSingleSelect: 'single-select',
+  IssueFieldMultiSelect: 'multi-select',
+  IssueFieldText: 'text',
+}
 const addBlockedByMutation = `${addBlockedByDocument}\n${boardIssueFragment}`
 const removeBlockedByMutation = `${removeBlockedByDocument}\n${boardIssueFragment}`
 
@@ -37,10 +53,15 @@ export class GitHubIssueSource implements IssueSource, IssueWriter {
   /** Rate limit reported by the most recent page fetch, for the UI to surface. */
   lastRateLimit: RateLimitInfo | null = null
 
-  constructor(
-    private readonly client: GitHubClient,
-    private readonly config: () => MapConfig,
-  ) {}
+  private readonly client: GitHubClient
+  private readonly config: () => MapConfig
+
+  // Plain fields, not constructor parameter properties: `erasableSyntaxOnly`
+  // (tsconfig.app.json) forbids syntax that would need compiling away.
+  constructor(client: GitHubClient, config: () => MapConfig) {
+    this.client = client
+    this.config = config
+  }
 
   async fetchPage(repo: RepoRef, cursor: string | null, pageSize: number): Promise<IssuePage> {
     const result = await this.client.query<BoardIssuesResponse>(boardIssuesQuery, {
@@ -74,21 +95,40 @@ export class GitHubIssueSource implements IssueSource, IssueWriter {
     }
   }
 
-  async dateFields(repo: RepoRef): Promise<DateField[]> {
-    const result = await this.client.query<RepoDateFieldsResponse>(repoDateFieldsQuery, {
+  async fetchIssue(repo: RepoRef, number: number): Promise<Task> {
+    const result = await this.client.query<RepoIssueResponse>(repoIssueQuery, {
+      owner: repo.owner,
+      repo: repo.name,
+      number,
+    })
+    this.lastRateLimit = result.rateLimit ?? this.lastRateLimit
+    const issue = result.data.repository?.issue
+    // GitHub normally answers a missing issue with a NOT_FOUND error, which
+    // the client has already thrown; this covers a bare null.
+    if (!issue) throw new GitHubError(`Could not resolve to an Issue with the number of ${number}.`)
+    return mapIssue(issue, this.config())
+  }
+
+  async fields(repo: RepoRef): Promise<IssueFieldRef[]> {
+    const result = await this.client.query<RepoFieldsResponse>(repoFieldsQuery, {
       owner: repo.owner,
       repo: repo.name,
     })
     this.lastRateLimit = result.rateLimit ?? this.lastRateLimit
-    return (result.data.repository?.issueFields?.nodes ?? []).flatMap((node) =>
-      node?.__typename === 'IssueFieldDate' && node.id && node.name ? [{ id: node.id, name: node.name }] : [],
-    )
+    return (result.data.repository?.issueFields?.nodes ?? []).flatMap((node) => {
+      const kind = node ? FIELD_KINDS[node.__typename] : undefined
+      return node && kind && node.id && node.name ? [{ id: node.id, name: node.name, kind }] : []
+    })
   }
 
-  async setDates(issueId: TaskId, values: DateFieldValue[]): Promise<Task> {
-    const result = await this.client.query<SetIssueDatesResponse>(setIssueDatesMutation, {
+  async setFields(issueId: TaskId, values: FieldValue[]): Promise<Task> {
+    const result = await this.client.query<SetIssueFieldsResponse>(setIssueFieldsMutation, {
       issueId,
-      fields: values.map((value) => ({ fieldId: value.fieldId, dateValue: value.date })),
+      fields: values.map((value) => {
+        if ('clear' in value) return { fieldId: value.fieldId, delete: true }
+        if ('number' in value) return { fieldId: value.fieldId, numberValue: value.number }
+        return { fieldId: value.fieldId, dateValue: value.date }
+      }),
     })
     // No rateLimit here: a mutation cannot select it, so keep the last one seen.
     const issue = result.data.setIssueFieldValue?.issue

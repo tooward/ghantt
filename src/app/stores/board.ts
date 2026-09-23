@@ -21,7 +21,8 @@ import { AuthError, type RateLimitInfo } from '../../adapters/github/GitHubClien
 import type { Task, TaskId } from '../../domain/Task'
 import { detectAndBreakCycles, pruneDanglingEdges, wouldCreateCycle } from '../../domain/TaskGraph'
 import type { IssueSource, RepoRef } from '../../ports/IssueSource'
-import type { DateField, DateFieldValue, IssueWriter } from '../../ports/IssueWriter'
+import type { FieldKind, FieldValue, IssueFieldRef, IssueWriter } from '../../ports/IssueWriter'
+import { formatIssueRef, parseIssueRef, type IssueRef } from '../issueRef'
 import { githubClient } from './auth'
 import { useSettingsStore } from './settings'
 
@@ -33,16 +34,29 @@ export interface BoardGraph {
   brokenCycles: number
 }
 
-/** New dates for one task, `YYYY-MM-DD`. Only what the user changed. */
-export interface DateChanges {
+/**
+ * New values for one task: dates as `YYYY-MM-DD`, Effort in working days or
+ * null to clear it. Only what the user changed.
+ */
+export interface FieldChanges {
   start?: string
   due?: string
+  effort?: number | null
 }
 
-/** Why a date cannot be edited, or null when it can. For the detail panel. */
-export interface DateEditability {
+/** Why each field cannot be edited, or null when it can. For the detail panel. */
+export interface FieldEditability {
   start: string | null
   due: string | null
+  effort: string | null
+}
+
+const KIND_NAMES: Record<FieldKind, string> = {
+  date: 'a date',
+  number: 'a number',
+  'single-select': 'a single-select',
+  'multi-select': 'a multi-select',
+  text: 'a text',
 }
 
 export const useBoardStore = defineStore('board', () => {
@@ -64,11 +78,16 @@ export const useBoardStore = defineStore('board', () => {
   const hasNextPage = ref(false)
   const totalCount = ref(0)
   const issueTypes = ref<string[]>([])
-  /** The repository's date fields, with the ids a save needs. */
-  const dateFields = ref<DateField[]>([])
+  /** The repository's issue fields, with the ids a save needs and their kinds. */
+  const fields = ref<IssueFieldRef[]>([])
   /** Set when the field lookup failed: editing is off, the chart is not. */
-  const dateFieldsError = ref<string | null>(null)
+  const fieldsError = ref<string | null>(null)
   const rateLimit = shallowRef<RateLimitInfo | null>(null)
+  /**
+   * Issues fetched one at a time for linking, keyed by id. Not on the board,
+   * but their own links still count when checking a new link for loops.
+   */
+  const lookups = new Map<TaskId, Task>()
 
   /** Recomputed over the whole accumulated set, so paging in issues heals edges. */
   const graph = computed<BoardGraph>(() => {
@@ -81,24 +100,31 @@ export const useBoardStore = defineStore('board', () => {
     }
   })
 
-  function fieldNamed(name: string): DateField | null {
+  function fieldNamed(name: string): IssueFieldRef | null {
     const wanted = name.trim().toLowerCase()
-    return dateFields.value.find((field) => field.name.trim().toLowerCase() === wanted) ?? null
+    return fields.value.find((field) => field.name.trim().toLowerCase() === wanted) ?? null
   }
 
   const startField = computed(() => fieldNamed(settings.startFieldName))
   const dueField = computed(() => fieldNamed(settings.dueFieldName))
+  const effortField = computed(() => fieldNamed(settings.effortFieldName))
 
-  const dateEditability = computed<DateEditability>(() => {
-    const why = (field: DateField | null, name: string): string | null => {
+  const fieldEditability = computed<FieldEditability>(() => {
+    const why = (field: IssueFieldRef | null, name: string, kind: FieldKind): string | null => {
       if (!writer.value) return 'Editing is not available.'
-      if (dateFieldsError.value) return `Could not look up this repository’s date fields: ${dateFieldsError.value}`
-      if (!field) return `This repository has no date field named “${name}”.`
+      if (fieldsError.value) return `Could not look up this repository’s issue fields: ${fieldsError.value}`
+      if (!field) return `This repository has no ${kind === 'date' ? 'date ' : ''}field named “${name}”.`
+      // Say what it is: "Effort is a single-select field here" is the state
+      // an organisation is in until it migrates Effort to a Number field.
+      if (field.kind !== kind) {
+        return `“${field.name}” is ${KIND_NAMES[field.kind]} field here; editing needs ${KIND_NAMES[kind]} field.`
+      }
       return null
     }
     return {
-      start: why(startField.value, settings.startFieldName),
-      due: why(dueField.value, settings.dueFieldName),
+      start: why(startField.value, settings.startFieldName, 'date'),
+      due: why(dueField.value, settings.dueFieldName, 'date'),
+      effort: why(effortField.value, settings.effortFieldName, 'number'),
     }
   })
 
@@ -132,44 +158,54 @@ export const useBoardStore = defineStore('board', () => {
     cursor.value = null
     hasNextPage.value = false
     totalCount.value = 0
-    dateFields.value = []
-    dateFieldsError.value = null
-    void loadDateFields(repo.value)
+    fields.value = []
+    fieldsError.value = null
+    lookups.clear()
+    void loadFields(repo.value)
     await fetchPage(null)
   }
 
   /** Runs beside the first page, never in front of it: a failure here only turns editing off. */
-  async function loadDateFields(target: RepoRef): Promise<void> {
+  async function loadFields(target: RepoRef): Promise<void> {
     if (!writer.value) return
     try {
-      const fields = await writer.value.dateFields(target)
-      if (repo.value === target) dateFields.value = fields
+      const found = await writer.value.fields(target)
+      if (repo.value === target) fields.value = found
     } catch (cause) {
-      if (repo.value === target) dateFieldsError.value = cause instanceof Error ? cause.message : 'unknown error'
+      if (repo.value === target) fieldsError.value = cause instanceof Error ? cause.message : 'unknown error'
     }
   }
 
   /**
-   * Write new dates to GitHub and swap in the issue as GitHub returns it.
-   * Resolves to an error message for the panel, or null on success. Never
-   * touches the connection: a read-only token is a failed save, not a logout.
+   * Write new Start / End / Effort values to GitHub in one call and swap in the
+   * issue as GitHub returns it. Resolves to an error message for the panel, or
+   * null on success. Never touches the connection: a read-only token is a
+   * failed save, not a logout.
    */
-  async function saveDates(taskId: TaskId, changes: DateChanges): Promise<string | null> {
+  async function saveFields(taskId: TaskId, changes: FieldChanges): Promise<string | null> {
     const target = writer.value
     if (!target) return 'Editing is not available.'
 
-    const values: DateFieldValue[] = []
+    const values: FieldValue[] = []
     for (const [key, field] of [['start', startField.value], ['due', dueField.value]] as const) {
       const date = changes[key]
       if (date === undefined) continue
-      const reason = dateEditability.value[key]
+      const reason = fieldEditability.value[key]
       if (!field || reason) return reason ?? 'That date cannot be edited.'
       values.push({ fieldId: field.id, date })
+    }
+    if (changes.effort !== undefined) {
+      const field = effortField.value
+      const reason = fieldEditability.value.effort
+      if (!field || reason) return reason ?? 'Effort cannot be edited.'
+      if (changes.effort === null) values.push({ fieldId: field.id, clear: true })
+      else if (Number.isFinite(changes.effort) && changes.effort > 0) values.push({ fieldId: field.id, number: changes.effort })
+      else return 'Effort must be a number of days above zero.'
     }
     if (values.length === 0) return null
 
     try {
-      replaceTasks([await target.setDates(taskId, values)])
+      replaceTasks([await target.setFields(taskId, values)])
       return null
     } catch (cause) {
       return writeFailure(cause)
@@ -184,7 +220,7 @@ export const useBoardStore = defineStore('board', () => {
   async function linkBlocker(blockedId: TaskId, blockerId: TaskId): Promise<string | null> {
     const target = writer.value
     if (!target) return 'Editing is not available.'
-    if (wouldCreateCycle(tasks.value, blockedId, blockerId)) {
+    if (wouldCreateCycle(knownTasks(), blockedId, blockerId)) {
       return 'That would make a loop: the blocker already waits on this issue, directly or through others.'
     }
     try {
@@ -206,12 +242,55 @@ export const useBoardStore = defineStore('board', () => {
     }
   }
 
+  /** Loaded tasks plus looked-up ones: everything the loop check can see. */
+  function knownTasks(): Task[] {
+    if (lookups.size === 0) return tasks.value
+    const loaded = new Set(tasks.value.map((task) => task.id))
+    return [...tasks.value, ...[...lookups.values()].filter((task) => !loaded.has(task.id))]
+  }
+
+  /**
+   * What the picker can offer to look up for this text — "#123", a pasted
+   * issue URL, "owner/repo#123" — or null when the text is not a reference.
+   */
+  function issueRefFor(text: string): { ref: IssueRef; label: string } | null {
+    if (!source.value.fetchIssue) return null
+    const ref = parseIssueRef(text, repo.value)
+    return ref ? { ref, label: formatIssueRef(ref, repo.value) } : null
+  }
+
+  /**
+   * Fetch one issue that is not on the board, so it can be linked. One
+   * request, made when the user chooses to, never per keystroke. Resolves to
+   * the task, or to an error message.
+   */
+  async function lookupIssue(ref: IssueRef): Promise<Task | string> {
+    const fetchIssue = source.value.fetchIssue?.bind(source.value)
+    if (!fetchIssue) return 'Looking up issues is not available.'
+    const label = formatIssueRef(ref, repo.value)
+    try {
+      const task = await fetchIssue({ owner: ref.owner, name: ref.name }, ref.number)
+      lookups.set(task.id, task)
+      if (source.value instanceof GitHubIssueSource) rateLimit.value = source.value.lastRateLimit
+      return task
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : ''
+      if (message.includes('resolve to an Issue')) return `There is no issue ${label}. (Pull requests cannot block.)`
+      if (message.includes('resolve to a Repository')) {
+        return `There is no repository ${ref.owner}/${ref.name}, or your token cannot see it.`
+      }
+      return message || `Looking up ${label} failed.`
+    }
+  }
+
   /**
    * Swap in issues as GitHub returned them, in place, so bars keep their rows
    * and the selection stays put. Issues not on the board (another type, say)
    * are ignored: the board shows what it loaded.
    */
   function replaceTasks(updated: Task[]): void {
+    // A looked-up issue comes back with its new links too; keep the loop check current.
+    for (const task of updated) if (lookups.has(task.id)) lookups.set(task.id, task)
     const byId = new Map(updated.map((task) => [task.id, task]))
     if (!tasks.value.some((task) => byId.has(task.id))) return
     tasks.value = tasks.value.map((task) => byId.get(task.id) ?? task)
@@ -237,8 +316,9 @@ export const useBoardStore = defineStore('board', () => {
     hasNextPage.value = false
     totalCount.value = 0
     issueTypes.value = []
-    dateFields.value = []
-    dateFieldsError.value = null
+    fields.value = []
+    fieldsError.value = null
+    lookups.clear()
     error.value = null
   }
 
@@ -246,7 +326,7 @@ export const useBoardStore = defineStore('board', () => {
   function useSource(replacement: IssueSource): void {
     source.value = replacement
     // The writer follows: a fake reader must not leave the real GitHub writer behind.
-    writer.value = 'setDates' in replacement ? (replacement as IssueSource & IssueWriter) : null
+    writer.value = 'setFields' in replacement ? (replacement as unknown as IssueWriter) : null
   }
 
   /** Test seam: swap the writer, or pass null for a read-only board. */
@@ -264,16 +344,18 @@ export const useBoardStore = defineStore('board', () => {
     hasNextPage,
     totalCount,
     issueTypes,
-    dateFields,
-    dateFieldsError,
-    dateEditability,
+    fields,
+    fieldsError,
+    fieldEditability,
     rateLimit,
     isEmpty,
     loadRepo,
     loadMore,
-    saveDates,
+    saveFields,
     linkBlocker,
     unlinkBlocker,
+    issueRefFor,
+    lookupIssue,
     clear,
     useSource,
     useWriter,

@@ -30,6 +30,10 @@ function inputs(overrides: Partial<DateInputs> = {}): DateInputs {
   }
 }
 
+// Expected dates were worked out independently with a weekday calendar, not
+// copied from the code's output. Start and End both count: 1 day = same day.
+// 2026-01-10 (the default createdAt) is a Saturday.
+
 // Local formatting, to match how dates reach the chart. A date-only string
 // parses to local midnight, so toISOString() would be a day out east of UTC.
 const day = (date: Date) => format(date, 'yyyy-MM-dd')
@@ -48,9 +52,10 @@ describe('resolveDates — start chain', () => {
   })
 
   it('rung 2: milestone due minus the default duration', () => {
+    // Fri 10 Apr, three working days: Wed 8, Thu 9, Fri 10.
     const { start } = resolveDates(inputs({ milestoneDue: '2026-04-10T00:00:00Z' }), { defaultTaskDays: 3 })
 
-    expect(day(start)).toBe('2026-04-07')
+    expect(day(start)).toBe('2026-04-08')
   })
 
   it('rung 3: createdAt when nothing else is present', () => {
@@ -80,11 +85,18 @@ describe('resolveDates — due chain', () => {
     expect(day(due)).toBe('2026-04-20')
   })
 
-  it('rung 3: start plus the default duration', () => {
+  it('rung 3: start plus the default duration, in working days', () => {
+    // Wed 1 Apr, five working days: Wed–Fri, then Mon 6, Tue 7.
     const { start, due } = resolveDates(inputs({ fieldStart: '2026-04-01T00:00:00Z' }), { defaultTaskDays: 5 })
 
     expect(day(start)).toBe('2026-04-01')
-    expect(day(due)).toBe('2026-04-06')
+    expect(day(due)).toBe('2026-04-07')
+  })
+
+  it('a one-day default ends on the start day', () => {
+    const { due } = resolveDates(inputs({ fieldStart: '2026-04-01' }), cfg)
+
+    expect(day(due)).toBe('2026-04-01')
   })
 })
 
@@ -103,7 +115,8 @@ describe('resolveDates — malformed input', () => {
   it('ignores a malformed milestone date and warns', () => {
     const { due, warnings } = resolveDates(inputs({ milestoneDue: 'soon' }), cfg)
 
-    expect(day(due)).toBe('2026-01-11')
+    // Created on a Saturday: the first working day is Monday the 12th.
+    expect(day(due)).toBe('2026-01-12')
     expect(warnings.join(' ')).toContain('milestone due date')
   })
 
@@ -124,7 +137,8 @@ describe('resolveDates — malformed input', () => {
   it('falls back to a sane duration when the configured one is nonsense', () => {
     const { start, due } = resolveDates(inputs({ fieldStart: '2026-04-01T00:00:00Z' }), { defaultTaskDays: -4 })
 
-    expect(due.getTime()).toBeGreaterThan(start.getTime())
+    // One day, which ends on the start day.
+    expect(day(due)).toBe(day(start))
   })
 })
 
@@ -135,7 +149,8 @@ describe('resolveDates — start rung 3 backs off from the resolved due date', (
       { defaultTaskDays: 2 },
     )
 
-    expect(day(start)).toBe('2026-02-18')
+    // Fri 20 Feb, two working days: Thu 19, Fri 20.
+    expect(day(start)).toBe('2026-02-19')
     expect(day(due)).toBe('2026-02-20')
     expect(warnings).toEqual([])
   })
@@ -148,6 +163,7 @@ describe('resolveDates — clamping', () => {
       { defaultTaskDays: 2 },
     )
 
+    // Sun 10 May: two working days from the next working day are Mon 11, Tue 12.
     expect(day(start)).toBe('2026-05-10')
     expect(day(due)).toBe('2026-05-12')
     expect(warnings.join(' ')).toContain('before the start date')
@@ -167,10 +183,74 @@ describe('resolveDates — clamping', () => {
 describe('resolveDates — the personal-repo case', () => {
   // Issue fields are organisation-level: a personal repo returns none at all.
   it('still produces valid dates with no fields and no milestone', () => {
-    const { start, due, warnings } = resolveDates(inputs(), cfg)
+    const { start, due, sources, warnings } = resolveDates(inputs(), cfg)
 
     expect(day(start)).toBe('2026-01-10')
-    expect(day(due)).toBe('2026-01-11')
+    expect(day(due)).toBe('2026-01-12')
+    expect(sources).toEqual({ start: 'created', due: 'default' })
     expect(warnings).toEqual([])
+  })
+})
+
+describe('resolveDates — Effort', () => {
+  it('gives the End from the Start field plus Effort, ahead of the milestone', () => {
+    // Mon 2 Mar, five working days: Mon–Fri 6 Mar.
+    const { due, sources } = resolveDates(
+      inputs({ fieldStart: '2026-03-02', milestoneDue: '2026-04-30T00:00:00Z', effortDays: 5 }),
+      cfg,
+    )
+
+    expect(day(due)).toBe('2026-03-06')
+    expect(sources.due).toBe('effort')
+  })
+
+  it('gives the Start from the End less Effort', () => {
+    // Thu 30 Apr, three working days: Tue 28, Wed 29, Thu 30.
+    const { start, sources } = resolveDates(inputs({ milestoneDue: '2026-04-30T00:00:00Z', effortDays: 3 }), cfg)
+
+    expect(day(start)).toBe('2026-04-28')
+    expect(sources).toEqual({ start: 'effort', due: 'milestone' })
+  })
+
+  it('lets an End field win over Effort', () => {
+    const { due, sources } = resolveDates(inputs({ fieldStart: '2026-10-01', fieldDue: '2026-10-30', effortDays: 2 }), cfg)
+
+    expect(day(due)).toBe('2026-10-30')
+    expect(sources).toEqual({ start: 'field', due: 'field' })
+  })
+
+  it('warns, without changing anything, when Start–End is shorter than Effort', () => {
+    // Thu 1 – Mon 5 Oct is three working days.
+    const { start, due, warnings } = resolveDates(
+      inputs({ fieldStart: '2026-10-01', fieldDue: '2026-10-05', effortDays: 5 }),
+      cfg,
+    )
+
+    expect(day(start)).toBe('2026-10-01')
+    expect(day(due)).toBe('2026-10-05')
+    expect(warnings).toEqual(['Start–End gives 3 working days; Effort is 5 days.'])
+  })
+
+  it('does not warn when Start–End exactly fits Effort', () => {
+    const { warnings } = resolveDates(inputs({ fieldStart: '2026-10-01', fieldDue: '2026-10-05', effortDays: 3 }), cfg)
+
+    expect(warnings).toEqual([])
+  })
+
+  it('only checks dates that both came from fields', () => {
+    // End from the milestone: nobody chose this pair, so there is nothing to warn about.
+    const { warnings } = resolveDates(
+      inputs({ fieldStart: '2026-10-01', milestoneDue: '2026-10-02T00:00:00Z', effortDays: 1 }),
+      cfg,
+    )
+
+    expect(warnings).toEqual([])
+  })
+
+  it.each([0, -2, Number.NaN, null])('ignores an Effort of %p', (effortDays) => {
+    const { due, sources } = resolveDates(inputs({ fieldStart: '2026-04-01', effortDays }), cfg)
+
+    expect(day(due)).toBe('2026-04-01')
+    expect(sources.due).toBe('default')
   })
 })

@@ -20,7 +20,7 @@ import { AuthError } from '../src/adapters/github/GitHubClient'
 import { useBoardStore } from '../src/app/stores/board'
 import type { Task, TaskId } from '../src/domain/Task'
 import type { IssuePage, IssueSource, RepoRef } from '../src/ports/IssueSource'
-import type { DateField, DateFieldValue, IssueWriter } from '../src/ports/IssueWriter'
+import type { FieldValue, IssueFieldRef, IssueWriter } from '../src/ports/IssueWriter'
 
 function task(id: TaskId, dependsOn: TaskId[] = []): Task {
   return {
@@ -34,6 +34,8 @@ function task(id: TaskId, dependsOn: TaskId[] = []): Task {
     blockers: [],
     blocking: [],
     effort: null,
+    effortDays: null,
+    dateSources: { start: 'field', due: 'field' },
     canSetFields: true,
     warnings: [],
   }
@@ -56,16 +58,21 @@ class FakeSource implements IssueSource {
 
 /** Records writes and answers with the task as the forge would return it. */
 class FakeWriter implements IssueWriter {
-  writes: Array<{ issueId: TaskId; values: DateFieldValue[] }> = []
+  writes: Array<{ issueId: TaskId; values: FieldValue[] }> = []
   failWith: Error | null = null
 
-  constructor(private readonly fields: DateField[] = [
-    { id: 'F_start', name: 'Start' },
-    { id: 'F_end', name: 'End' },
-  ]) {}
+  private readonly repoFields: IssueFieldRef[]
 
-  async dateFields(): Promise<DateField[]> {
-    return this.fields
+  constructor(repoFields: IssueFieldRef[] = [
+    { id: 'F_start', name: 'Start', kind: 'date' },
+    { id: 'F_end', name: 'End', kind: 'date' },
+    { id: 'F_effort', name: 'Effort', kind: 'number' },
+  ]) {
+    this.repoFields = repoFields
+  }
+
+  async fields(): Promise<IssueFieldRef[]> {
+    return this.repoFields
   }
 
   links: Array<{ op: 'add' | 'remove'; issueId: TaskId; blockerId: TaskId }> = []
@@ -92,13 +99,14 @@ class FakeWriter implements IssueWriter {
     return [blocked, blocker]
   }
 
-  async setDates(issueId: TaskId, values: DateFieldValue[]): Promise<Task> {
+  async setFields(issueId: TaskId, values: FieldValue[]): Promise<Task> {
     this.writes.push({ issueId, values })
     if (this.failWith) throw this.failWith
     const updated = task(issueId)
     for (const value of values) {
-      if (value.fieldId === 'F_start') updated.start = new Date(`${value.date}T00:00:00`)
-      if (value.fieldId === 'F_end') updated.due = new Date(`${value.date}T00:00:00`)
+      if ('date' in value && value.fieldId === 'F_start') updated.start = new Date(`${value.date}T00:00:00`)
+      if ('date' in value && value.fieldId === 'F_end') updated.due = new Date(`${value.date}T00:00:00`)
+      if (value.fieldId === 'F_effort') updated.effortDays = 'number' in value ? value.number : null
     }
     return updated
   }
@@ -308,22 +316,22 @@ describe('board store at board scale', () => {
     it('looks up the date fields beside the board and makes both dates editable', async () => {
       const board = await boardWith(new FakeWriter())
 
-      expect(board.dateFields.map((field) => field.name)).toEqual(['Start', 'End'])
-      expect(board.dateEditability).toEqual({ start: null, due: null })
+      expect(board.fields.map((field) => field.name)).toEqual(['Start', 'End', 'Effort'])
+      expect(board.fieldEditability).toEqual({ start: null, due: null, effort: null })
     })
 
     it('says which date cannot be edited when a field is missing', async () => {
-      const board = await boardWith(new FakeWriter([{ id: 'F_start', name: 'start' }]))
+      const board = await boardWith(new FakeWriter([{ id: 'F_start', name: 'start', kind: 'date' }]))
 
-      expect(board.dateEditability.start).toBeNull()
-      expect(board.dateEditability.due).toBe('This repository has no date field named “End”.')
+      expect(board.fieldEditability.start).toBeNull()
+      expect(board.fieldEditability.due).toBe('This repository has no date field named “End”.')
     })
 
     it('writes only the changed field, by its id, and replaces the task in place', async () => {
       const writer = new FakeWriter()
       const board = await boardWith(writer)
 
-      expect(await board.saveDates('b', { due: '2026-03-01' })).toBeNull()
+      expect(await board.saveFields('b', { due: '2026-03-01' })).toBeNull()
 
       expect(writer.writes).toEqual([{ issueId: 'b', values: [{ fieldId: 'F_end', date: '2026-03-01' }] }])
       expect(board.tasks.map((t) => t.id)).toEqual(['a', 'b', 'c'])
@@ -334,7 +342,7 @@ describe('board store at board scale', () => {
       const writer = new FakeWriter()
       const board = await boardWith(writer)
 
-      await board.saveDates('a', { start: '2026-02-01', due: '2026-02-10' })
+      await board.saveFields('a', { start: '2026-02-01', due: '2026-02-10' })
 
       expect(writer.writes).toHaveLength(1)
       expect(writer.writes[0].values.map((v) => v.fieldId)).toEqual(['F_start', 'F_end'])
@@ -345,7 +353,7 @@ describe('board store at board scale', () => {
       writer.failWith = new AuthError('Resource not accessible by personal access token')
       const board = await boardWith(writer)
 
-      const message = await board.saveDates('a', { start: '2026-02-01' })
+      const message = await board.saveFields('a', { start: '2026-02-01' })
 
       expect(message).toContain('Issues: Read and write')
       expect(message).toContain('Resource not accessible by personal access token')
@@ -354,11 +362,62 @@ describe('board store at board scale', () => {
     })
 
     it('refuses to write a date whose field does not exist', async () => {
-      const writer = new FakeWriter([{ id: 'F_start', name: 'Start' }])
+      const writer = new FakeWriter([{ id: 'F_start', name: 'Start', kind: 'date' }])
       const board = await boardWith(writer)
 
-      expect(await board.saveDates('a', { due: '2026-02-10' })).toContain('no date field named “End”')
+      expect(await board.saveFields('a', { due: '2026-02-10' })).toContain('no date field named “End”')
       expect(writer.writes).toEqual([])
+    })
+
+    it('writes Effort as a number, and clears it with null', async () => {
+      const writer = new FakeWriter()
+      const board = await boardWith(writer)
+
+      expect(await board.saveFields('a', { effort: 2.5 })).toBeNull()
+      expect(await board.saveFields('a', { effort: null })).toBeNull()
+
+      expect(writer.writes.map((w) => w.values)).toEqual([
+        [{ fieldId: 'F_effort', number: 2.5 }],
+        [{ fieldId: 'F_effort', clear: true }],
+      ])
+    })
+
+    it('sends dates and Effort together in one write', async () => {
+      const writer = new FakeWriter()
+      const board = await boardWith(writer)
+
+      await board.saveFields('a', { due: '2026-02-10', effort: 3 })
+
+      expect(writer.writes).toHaveLength(1)
+      expect(writer.writes[0].values.map((v) => v.fieldId)).toEqual(['F_end', 'F_effort'])
+    })
+
+    it('refuses an Effort that is not above zero', async () => {
+      const writer = new FakeWriter()
+      const board = await boardWith(writer)
+
+      expect(await board.saveFields('a', { effort: 0 })).toBe('Effort must be a number of days above zero.')
+      expect(writer.writes).toEqual([])
+    })
+
+    it('says so when Effort is a single-select field, which cannot be calculated with', async () => {
+      const writer = new FakeWriter([
+        { id: 'F_start', name: 'Start', kind: 'date' },
+        { id: 'F_end', name: 'End', kind: 'date' },
+        { id: 'F_effort', name: 'Effort', kind: 'single-select' },
+      ])
+      const board = await boardWith(writer)
+
+      expect(board.fieldEditability.start).toBeNull()
+      expect(board.fieldEditability.effort).toBe('“Effort” is a single-select field here; editing needs a number field.')
+      expect(await board.saveFields('a', { effort: 3 })).toContain('single-select')
+      expect(writer.writes).toEqual([])
+    })
+
+    it('says which Effort field is missing', async () => {
+      const board = await boardWith(new FakeWriter([{ id: 'F_start', name: 'Start', kind: 'date' }]))
+
+      expect(board.fieldEditability.effort).toBe('This repository has no field named “Effort”.')
     })
 
     it('is read-only when the source cannot write', async () => {
@@ -366,8 +425,12 @@ describe('board store at board scale', () => {
       board.useSource(new FakeSource([pageOf([task('a')], null, 1)]))
       await board.loadRepo('acme', 'widgets')
 
-      expect(board.dateEditability.start).toBe('Editing is not available.')
-      expect(await board.saveDates('a', { start: '2026-02-01' })).toBe('Editing is not available.')
+      expect(board.fieldEditability).toEqual({
+        start: 'Editing is not available.',
+        due: 'Editing is not available.',
+        effort: 'Editing is not available.',
+      })
+      expect(await board.saveFields('a', { start: '2026-02-01' })).toBe('Editing is not available.')
     })
   })
 
@@ -433,6 +496,74 @@ describe('board store at board scale', () => {
 
       expect(board.tasks.map((t) => t.id)).toEqual(['a', 'b', 'c'])
       expect(board.tasks[0].dependsOn).toEqual(['z'])
+    })
+  })
+
+  describe('looking up an issue that is not loaded', () => {
+    /** Serves pages, plus single issues by number from a second pool. */
+    class LookupSource extends FakeSource {
+      lookups: Array<{ repo: RepoRef; number: number }> = []
+
+      constructor(pages: IssuePage[], private readonly others: Map<number, Task>) {
+        super(pages)
+      }
+
+      async fetchIssue(repo: RepoRef, number: number): Promise<Task> {
+        this.lookups.push({ repo, number })
+        const found = this.others.get(number)
+        if (!found) throw new Error(`Could not resolve to an Issue with the number of ${number}.`)
+        return found
+      }
+    }
+
+    async function boardWith(others: Map<number, Task>) {
+      const board = useBoardStore()
+      const source = new LookupSource([pageOf([task('a'), task('b')], null, 2)], others)
+      board.useSource(source)
+      board.useWriter(new FakeWriter())
+      await board.loadRepo('acme', 'widgets')
+      return { board, source }
+    }
+
+    it('offers a lookup for a reference, labelled for the current repository', async () => {
+      const { board } = await boardWith(new Map())
+
+      expect(board.issueRefFor('#42')?.label).toBe('#42')
+      expect(board.issueRefFor('acme/api#9')?.label).toBe('acme/api#9')
+      expect(board.issueRefFor('Build the thing')).toBeNull()
+    })
+
+    it('fetches the issue in the named repository, once', async () => {
+      const { board, source } = await boardWith(new Map([[42, task('x42')]]))
+
+      const result = await board.lookupIssue(board.issueRefFor('#42')!.ref)
+
+      expect(result).toMatchObject({ id: 'x42' })
+      expect(source.lookups).toEqual([{ repo: { owner: 'acme', name: 'widgets' }, number: 42 }])
+      // Looked up, not loaded: the board is unchanged.
+      expect(board.tasks.map((t) => t.id)).toEqual(['a', 'b'])
+    })
+
+    it('explains a missing issue, or a pull request number', async () => {
+      const { board } = await boardWith(new Map())
+
+      expect(await board.lookupIssue(board.issueRefFor('#7')!.ref)).toBe('There is no issue #7. (Pull requests cannot block.)')
+    })
+
+    it('counts a looked-up issue’s own links when checking a new link for loops', async () => {
+      // x waits on a. Making a wait on x would close a loop the board cannot see.
+      const { board } = await boardWith(new Map([[9, task('x', ['a'])]]))
+      await board.lookupIssue(board.issueRefFor('#9')!.ref)
+
+      expect(await board.linkBlocker('a', 'x')).toContain('loop')
+    })
+
+    it('offers no lookup when the source cannot fetch single issues', async () => {
+      const board = useBoardStore()
+      board.useSource(new FakeSource([pageOf([task('a')], null, 1)]))
+      await board.loadRepo('acme', 'widgets')
+
+      expect(board.issueRefFor('#42')).toBeNull()
     })
   })
 })

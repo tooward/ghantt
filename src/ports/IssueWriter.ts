@@ -17,27 +17,31 @@
 import type { Task, TaskId } from '../domain/Task'
 import type { RepoRef } from './IssueSource'
 
-/** A date-type issue field a repository offers. */
-export interface DateField {
+/** What kind of value an issue field holds. Only dates and numbers are written. */
+export type FieldKind = 'date' | 'number' | 'single-select' | 'multi-select' | 'text'
+
+/** An issue field a repository offers. */
+export interface IssueFieldRef {
   id: string
   name: string
+  kind: FieldKind
 }
 
-/** One field to set: a `DateField.id` and a `YYYY-MM-DD` date. */
-export interface DateFieldValue {
-  fieldId: string
-  date: string
-}
+/** One field to set — a `YYYY-MM-DD` date or a number — or to clear. */
+export type FieldValue =
+  | { fieldId: string; date: string }
+  | { fieldId: string; number: number }
+  | { fieldId: string; clear: true }
 
 /**
  * Writing back to the forge. Separate from `IssueSource` so reading never
  * depends on write support, and a read-only source stays a complete one.
  */
 export interface IssueWriter {
-  /** The date fields issues in this repository can carry. */
-  dateFields(repo: RepoRef): Promise<DateField[]>
-  /** Set the given fields on one issue; resolves to the issue as the forge now holds it. */
-  setDates(issueId: TaskId, values: DateFieldValue[]): Promise<Task>
+  /** The issue fields this repository offers, with their kinds. */
+  fields(repo: RepoRef): Promise<IssueFieldRef[]>
+  /** Set or clear the given fields on one issue; resolves to the issue as the forge now holds it. */
+  setFields(issueId: TaskId, values: FieldValue[]): Promise<Task>
   /**
    * Record that `issueId` is blocked by `blockerId`, or remove that. Resolves
    * to both issues as the forge now holds them, so each side's links update.
