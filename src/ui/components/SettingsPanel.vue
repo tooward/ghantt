@@ -84,10 +84,10 @@ function onDialogClick(event: MouseEvent) {
       </div>
 
       <div>
-        <label for="effort-field" class="block text-sm font-medium">Effort field</label>
+        <label for="days-field" class="block text-sm font-medium">Days field</label>
         <input
-          id="effort-field"
-          v-model="settings.effortFieldName"
+          id="days-field"
+          v-model="settings.daysFieldName"
           class="mt-1 w-full rounded border border-gray-300 px-3 py-2"
         >
         <p class="mt-1 text-xs text-gray-500">A Number issue field, in working days. A single-select one is shown but not calculated with.</p>
@@ -103,7 +103,7 @@ function onDialogClick(event: MouseEvent) {
           max="365"
           class="mt-1 w-full rounded border border-gray-300 px-3 py-2"
         >
-        <p class="mt-1 text-xs text-gray-500">Used when an issue has no End and no Effort. Start and End both count, so 1 means a one-day task.</p>
+        <p class="mt-1 text-xs text-gray-500">Used when an issue has no End and no Days. Start and End both count, so 1 means a one-day task.</p>
       </div>
 
       <div>

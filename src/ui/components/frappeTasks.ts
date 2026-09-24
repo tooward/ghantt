@@ -32,10 +32,24 @@ import type { Task } from '../../domain/Task'
  */
 export const WARNED_BAR_CLASS = 'gh-gantt-warned'
 
+/** The text on a bar and in its tooltip. */
+export function barName(task: Task): string {
+  return `#${task.number} ${task.title}`
+}
+
+/**
+ * frappe writes a task's name into the chart with `innerHTML`, and issue
+ * titles are anyone's text: "<img onerror=…>" in a title would run in the page
+ * that holds the token. Escaped here, it is drawn as the characters typed.
+ */
+function escapeMarkup(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
 export function toFrappeTasks(tasks: Task[]): FrappeTask[] {
   return tasks.map((task) => ({
     id: task.id,
-    name: `#${task.number} ${task.title}`,
+    name: escapeMarkup(barName(task)),
     start: format(task.start, 'yyyy-MM-dd'),
     end: format(task.due, 'yyyy-MM-dd'),
     progress: 0,

@@ -472,7 +472,7 @@ describe('TaskDetail', () => {
     })
   })
 
-  describe('Effort', () => {
+  describe('Days', () => {
     // Thu 1 Oct – Mon 5 Oct is three working days (independently worked out).
     const shortTask: Task = {
       ...task,
@@ -484,7 +484,7 @@ describe('TaskDetail', () => {
     }
     const editable = { start: null, due: null, effort: null }
 
-    function mountEffort(save = vi.fn(async () => null), overrides: Partial<Task> = {}) {
+    function mountDays(save = vi.fn(async () => null), overrides: Partial<Task> = {}) {
       const wrapper = mount(TaskDetail, {
         props: { task: { ...shortTask, ...overrides }, tasks: [shortTask], editability: editable, save },
         attachTo: document.body,
@@ -492,21 +492,21 @@ describe('TaskDetail', () => {
       return { wrapper, save }
     }
 
-    const saveButton = (wrapper: ReturnType<typeof mountEffort>['wrapper']) =>
+    const saveButton = (wrapper: ReturnType<typeof mountDays>['wrapper']) =>
       wrapper.findAll('button').find((b) => ['Save', 'Save anyway', 'Saving…'].includes(b.text()))!
 
-    it('shows Length in working days, counting both ends, and Effort in its box', () => {
-      const { wrapper } = mountEffort()
+    it('shows Length in working days, counting both ends, and Days in its box', () => {
+      const { wrapper } = mountDays()
 
       expect(wrapper.text()).toContain('3 working days')
-      expect((wrapper.get('#detail-effort').element as HTMLInputElement).value).toBe('2')
+      expect((wrapper.get('#detail-days').element as HTMLInputElement).value).toBe('2')
       wrapper.unmount()
     })
 
-    it('sends only a changed Effort, as a number', async () => {
-      const { wrapper, save } = mountEffort()
+    it('sends only a changed Days, as a number', async () => {
+      const { wrapper, save } = mountDays()
 
-      await wrapper.get('#detail-effort').setValue('2.5')
+      await wrapper.get('#detail-days').setValue('2.5')
       await wrapper.get('form').trigger('submit')
       await flushPromises()
 
@@ -514,10 +514,10 @@ describe('TaskDetail', () => {
       wrapper.unmount()
     })
 
-    it('clears Effort when the box is emptied', async () => {
-      const { wrapper, save } = mountEffort()
+    it('clears Days when the box is emptied', async () => {
+      const { wrapper, save } = mountDays()
 
-      await wrapper.get('#detail-effort').setValue('')
+      await wrapper.get('#detail-days').setValue('')
       await wrapper.get('form').trigger('submit')
       await flushPromises()
 
@@ -525,12 +525,12 @@ describe('TaskDetail', () => {
       wrapper.unmount()
     })
 
-    it('warns, and offers Save anyway, when the dates are shorter than Effort', async () => {
-      const { wrapper, save } = mountEffort()
+    it('warns, and offers Save anyway, when the dates are shorter than Days', async () => {
+      const { wrapper, save } = mountDays()
 
-      await wrapper.get('#detail-effort').setValue('5')
+      await wrapper.get('#detail-days').setValue('5')
 
-      expect(wrapper.get('[role="status"]').text()).toContain('Start–End gives 3 working days; Effort is 5 days.')
+      expect(wrapper.get('[role="status"]').text()).toContain('Start–End gives 3 working days; Days is set to 5.')
       expect(saveButton(wrapper).text()).toBe('Save anyway')
       expect(saveButton(wrapper).attributes('disabled')).toBeUndefined()
 
@@ -540,22 +540,22 @@ describe('TaskDetail', () => {
       wrapper.unmount()
     })
 
-    it('warns when shortening the End below Effort', async () => {
-      const { wrapper } = mountEffort()
+    it('warns when shortening the End below Days', async () => {
+      const { wrapper } = mountDays()
 
-      // Thu 1 – Thu 1 is one working day; Effort is two.
+      // Thu 1 – Thu 1 is one working day; Days is two.
       await wrapper.get('#detail-due').setValue('2026-10-01')
 
-      expect(wrapper.text()).toContain('Start–End gives 1 working day; Effort is 2 days.')
+      expect(wrapper.text()).toContain('Start–End gives 1 working day; Days is set to 2.')
       expect(saveButton(wrapper).text()).toBe('Save anyway')
       wrapper.unmount()
     })
 
-    it('Set End from Effort fills the End box from Start + Effort, and waits for Save', async () => {
-      const { wrapper, save } = mountEffort()
+    it('Set End from Days fills the End box from Start + Days, and waits for Save', async () => {
+      const { wrapper, save } = mountDays()
 
-      await wrapper.get('#detail-effort').setValue('10')
-      const button = wrapper.findAll('button').find((b) => b.text().startsWith('Set End from Effort'))!
+      await wrapper.get('#detail-days').setValue('10')
+      const button = wrapper.findAll('button').find((b) => b.text().startsWith('Set End from Days'))!
       // Thu 1 Oct plus ten working days ends Wed 14 Oct.
       expect(button.text()).toContain('Wed 14 Oct 2026')
       await button.trigger('click')
@@ -566,58 +566,238 @@ describe('TaskDetail', () => {
       wrapper.unmount()
     })
 
-    it('hides Set End from Effort when the End already matches', async () => {
+    it('hides Set End from Days when the End already matches', async () => {
       // Thu 1 Oct plus three working days is Mon 5 Oct: already the End.
-      const { wrapper } = mountEffort(undefined, { effortDays: 3 })
+      const { wrapper } = mountDays(undefined, { effortDays: 3 })
 
-      expect(wrapper.findAll('button').some((b) => b.text().startsWith('Set End from Effort'))).toBe(false)
+      expect(wrapper.findAll('button').some((b) => b.text().startsWith('Set End from Days'))).toBe(false)
       wrapper.unmount()
     })
 
-    it('refuses an Effort that is not above zero', async () => {
-      const { wrapper, save } = mountEffort()
+    it('refuses a Days that is not above zero', async () => {
+      const { wrapper, save } = mountDays()
 
-      await wrapper.get('#detail-effort').setValue('0')
+      await wrapper.get('#detail-days').setValue('0')
 
-      expect(wrapper.text()).toContain('Effort must be a number of days above zero.')
+      expect(wrapper.text()).toContain('Days must be a number above zero.')
       expect(saveButton(wrapper).attributes('disabled')).toBeDefined()
       await wrapper.get('form').trigger('submit')
       expect(save).not.toHaveBeenCalled()
       wrapper.unmount()
     })
 
-    it('shows a single-select Effort as text, with the reason, and no box', () => {
+    it('shows a single-select Days as text, with the reason, and no box', () => {
       const wrapper = mount(TaskDetail, {
         props: {
           task: { ...shortTask, effort: 'M', effortDays: null },
           tasks: [shortTask],
-          editability: { start: null, due: null, effort: '“Effort” is a single-select field here; editing needs a number field.' },
+          editability: { start: null, due: null, effort: '“Days” is a single-select field here; editing needs a number field.' },
           save: vi.fn(),
         },
       })
 
-      expect(wrapper.find('#detail-effort').exists()).toBe(false)
+      expect(wrapper.find('#detail-days').exists()).toBe(false)
       expect(wrapper.text()).toContain('M')
       expect(wrapper.text()).toContain('single-select field here')
     })
 
     it('says where a date came from while it is unchanged', async () => {
-      const { wrapper } = mountEffort(undefined, { dateSources: { start: 'field', due: 'effort' } })
+      const { wrapper } = mountDays(undefined, { dateSources: { start: 'field', due: 'effort' } })
 
-      expect(wrapper.text()).toContain('(from Effort)')
+      expect(wrapper.text()).toContain('(from Days)')
       await wrapper.get('#detail-due').setValue('2026-10-09')
-      expect(wrapper.text()).not.toContain('(from Effort)')
+      expect(wrapper.text()).not.toContain('(from Days)')
       wrapper.unmount()
     })
 
-    it('keeps an unsaved Effort when a link change hands back a new task', async () => {
-      const { wrapper } = mountEffort()
+    it('keeps an unsaved Days when a link change hands back a new task', async () => {
+      const { wrapper } = mountDays()
 
-      await wrapper.get('#detail-effort').setValue('4')
+      await wrapper.get('#detail-days').setValue('4')
       await wrapper.setProps({ task: { ...shortTask, blockers: [] } })
 
-      expect((wrapper.get('#detail-effort').element as HTMLInputElement).value).toBe('4')
+      expect((wrapper.get('#detail-days').element as HTMLInputElement).value).toBe('4')
       wrapper.unmount()
+    })
+
+    const button = (wrapper: ReturnType<typeof mountDays>['wrapper'], label: string) =>
+      wrapper.findAll('button').find((b) => b.text().startsWith(label))
+
+    it('warns when the dates are longer than Days, as soon as it opens', () => {
+      const { wrapper } = mountDays()
+
+      expect(wrapper.get('[role="status"]').text()).toContain('Start–End gives 3 working days; Days is set to 2.')
+      wrapper.unmount()
+    })
+
+    it('offers nothing when the dates and Days agree, counting a part day as whole', () => {
+      const { wrapper } = mountDays(undefined, { effortDays: 2.5 })
+
+      expect(wrapper.find('[role="status"]').exists()).toBe(false)
+      for (const label of ['Set Days', 'Set End', 'Set Start']) expect(button(wrapper, label)).toBeUndefined()
+      wrapper.unmount()
+    })
+
+    it('offers nothing when a weekend Start still gives the same working days', () => {
+      // Sat 3 – Mon 5 Oct is one working day, and Days is one.
+      const { wrapper } = mountDays(undefined, { start: new Date(2026, 9, 3), effortDays: 1 })
+
+      for (const label of ['Set Days', 'Set End', 'Set Start']) expect(button(wrapper, label)).toBeUndefined()
+      wrapper.unmount()
+    })
+
+    it('Set Days from Start–End fills the Days box, and waits for Save', async () => {
+      const { wrapper, save } = mountDays()
+
+      await button(wrapper, 'Set Days from Start–End (3)')!.trigger('click')
+
+      expect((wrapper.get('#detail-days').element as HTMLInputElement).value).toBe('3')
+      expect(save).not.toHaveBeenCalled()
+      expect(saveButton(wrapper).text()).toBe('Save')
+      expect(button(wrapper, 'Set Days')).toBeUndefined()
+      wrapper.unmount()
+    })
+
+    it('Set Start from Days fills the Start box from End − Days, and waits for Save', async () => {
+      const { wrapper, save } = mountDays()
+
+      // Two working days ending Mon 5 Oct start Fri 2 Oct.
+      const offer = button(wrapper, 'Set Start from Days')!
+      expect(offer.text()).toContain('Fri 2 Oct 2026')
+      await offer.trigger('click')
+
+      expect((wrapper.get('#detail-start').element as HTMLInputElement).value).toBe('2026-10-02')
+      expect(save).not.toHaveBeenCalled()
+      wrapper.unmount()
+    })
+
+    it('offers each adjustment again after any of the three changes', async () => {
+      const { wrapper } = mountDays(undefined, { effortDays: 3 })
+      expect(button(wrapper, 'Set Days')).toBeUndefined()
+
+      await wrapper.get('#detail-start').setValue('2026-10-02')
+
+      expect(button(wrapper, 'Set Days from Start–End (2)')).toBeDefined()
+      expect(button(wrapper, 'Set End from Days')).toBeDefined()
+      expect(button(wrapper, 'Set Start from Days')).toBeDefined()
+      wrapper.unmount()
+    })
+
+    describe('filled in on opening', () => {
+      const empty: Partial<Task> = { effort: null, effortDays: null }
+
+      it('saves Days from Start–End once, and says so', async () => {
+        const { wrapper, save } = mountDays(undefined, empty)
+        await flushPromises()
+
+        expect(save).toHaveBeenCalledOnce()
+        expect(save).toHaveBeenCalledWith({ effort: 3 })
+        expect(wrapper.text()).toContain('Days set to 3 from Start–End and saved to GitHub.')
+
+        // GitHub hands back the issue with Days set; nothing more is written.
+        await wrapper.setProps({ task: { ...shortTask, effort: '3', effortDays: 3 } })
+        await flushPromises()
+        expect(save).toHaveBeenCalledOnce()
+        expect((wrapper.get('#detail-days').element as HTMLInputElement).value).toBe('3')
+        wrapper.unmount()
+      })
+
+      it.each<[string, Partial<Task>]>([
+        ['a date not from a field', { dateSources: { start: 'field', due: 'milestone' } }],
+        ['Days already set', { effort: '2', effortDays: 2 }],
+        ['a stored Days of 0', { effort: '0', effortDays: null }],
+        ['no permission to set fields', { canSetFields: false }],
+      ])('does not save with %s', async (_, overrides) => {
+        const { wrapper, save } = mountDays(undefined, { ...empty, ...overrides })
+        await flushPromises()
+
+        expect(save).not.toHaveBeenCalled()
+        wrapper.unmount()
+      })
+
+      it('does not save when Days cannot be edited', async () => {
+        const save = vi.fn(async () => null)
+        const wrapper = mount(TaskDetail, {
+          props: {
+            task: { ...shortTask, ...empty },
+            tasks: [shortTask],
+            editability: { ...editable, effort: 'This repository has no field named “Days”.' },
+            save,
+          },
+        })
+        await flushPromises()
+
+        expect(save).not.toHaveBeenCalled()
+        wrapper.unmount()
+      })
+
+      it('waits for the field lookup before saving', async () => {
+        const save = vi.fn(async () => null)
+        const wrapper = mount(TaskDetail, {
+          props: { task: { ...shortTask, ...empty }, tasks: [shortTask], editability: { start: null, due: null }, save },
+        })
+        await flushPromises()
+        expect(save).not.toHaveBeenCalled()
+
+        await wrapper.setProps({ editability: editable })
+        await flushPromises()
+        expect(save).toHaveBeenCalledWith({ effort: 3 })
+        wrapper.unmount()
+      })
+
+      it('does not refill Days the user has just cleared', async () => {
+        const { wrapper, save } = mountDays()
+
+        await wrapper.get('#detail-days').setValue('')
+        await wrapper.get('form').trigger('submit')
+        await flushPromises()
+        await wrapper.setProps({ task: { ...shortTask, ...empty } })
+        await flushPromises()
+
+        expect(save).toHaveBeenCalledOnce()
+        expect(save).toHaveBeenCalledWith({ effort: null })
+        wrapper.unmount()
+      })
+
+      it('offers Days, rather than writing it, once the user saves a first End', async () => {
+        const { wrapper, save } = mountDays(undefined, { ...empty, dateSources: { start: 'field', due: 'milestone' } })
+
+        await wrapper.get('#detail-due').setValue('2026-10-06')
+        await wrapper.get('form').trigger('submit')
+        await flushPromises()
+        await wrapper.setProps({ task: { ...shortTask, ...empty, due: new Date(2026, 9, 6) } })
+        await flushPromises()
+
+        expect(save).toHaveBeenCalledOnce()
+        expect(save).toHaveBeenCalledWith({ due: '2026-10-06' })
+        expect(button(wrapper, 'Set Days from Start–End (4)')).toBeDefined()
+        wrapper.unmount()
+      })
+
+      it('reports a failed save quietly and does not retry', async () => {
+        const save = vi.fn(async () => 'GitHub said no.')
+        const { wrapper } = mountDays(save, empty)
+        await flushPromises()
+
+        expect(wrapper.text()).toContain('Could not fill in Days from Start–End: GitHub said no.')
+        await wrapper.setProps({ task: { ...shortTask, ...empty, title: 'Renamed' } })
+        await flushPromises()
+        expect(save).toHaveBeenCalledOnce()
+        wrapper.unmount()
+      })
+
+      it('keeps what the user types while the save is on its way', async () => {
+        let finish: (value: null) => void = () => {}
+        const save = vi.fn(() => new Promise<null>((resolve) => { finish = resolve }))
+        const { wrapper } = mountDays(save, empty)
+
+        await wrapper.get('#detail-days').setValue('4')
+        finish(null)
+        await wrapper.setProps({ task: { ...shortTask, effort: '3', effortDays: 3 } })
+
+        expect((wrapper.get('#detail-days').element as HTMLInputElement).value).toBe('4')
+        wrapper.unmount()
+      })
     })
   })
 })

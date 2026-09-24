@@ -17,14 +17,14 @@
 <script setup lang="ts">
 import { format, isValid, parseISO } from 'date-fns'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { effortConflict, formatDays, type DateSource } from '../../domain/dateResolution'
+import { daysAligned, effortConflict, formatDays, type DateSource } from '../../domain/dateResolution'
 import type { Task, TaskId } from '../../domain/Task'
 import { wouldCreateCycle } from '../../domain/TaskGraph'
-import { countWorkingDays, endAfterWorkingDays } from '../../domain/workingDays'
+import { countWorkingDays, endAfterWorkingDays, startBeforeWorkingDays } from '../../domain/workingDays'
 import IssueLinks, { type LinkCandidate, type LookupOffer } from './IssueLinks.vue'
 
 /**
- * Only what the user changed: dates as `YYYY-MM-DD`, Effort in working days
+ * Only what the user changed: dates as `YYYY-MM-DD`, Days in working days
  * or null to clear it.
  */
 export interface FieldChanges {
@@ -36,7 +36,7 @@ export interface FieldChanges {
 type EditableField = 'start' | 'due' | 'effort'
 
 /**
- * The selected task's details, and the place its dates and Effort are edited.
+ * The selected task's details, and the place its dates and Days are edited.
  * Mount it with `:key` set to the task id so switching tasks starts a fresh
  * form. Every day count comes from `workingDays.ts`; nothing here counts days.
  */
@@ -68,7 +68,7 @@ const effortToInput = (days: number | null) => (days === null ? '' : String(days
 
 const startInput = ref(toInput(props.task.start))
 const dueInput = ref(toInput(props.task.due))
-// A string, so an empty box means "no Effort" rather than zero.
+// A string, so an empty box means "no Days" rather than zero.
 const effortInput = ref(effortToInput(props.task.effortDays))
 const saving = ref(false)
 const saveError = ref<string | null>(null)
@@ -86,10 +86,12 @@ watch(
     dueInput.value = due
   },
 )
+// Only while the box still shows the old value: an automatic save of Days
+// can land while the user is typing in it.
 watch(
   () => props.task.effortDays,
-  (days) => {
-    effortInput.value = effortToInput(days)
+  (days, previous) => {
+    if (effortInput.value === effortToInput(previous)) effortInput.value = effortToInput(days)
   },
 )
 
@@ -179,8 +181,8 @@ function reasonFor(key: EditableField): string | null {
   if (!props.save || !props.editability) return 'Editing is not available.'
   if (!props.task.canSetFields) return 'You do not have permission to set fields on this issue.'
   const reason = props.editability[key]
-  // null means "editable"; only a parent that never mentions Effort leaves it unavailable.
-  if (reason === undefined) return key === 'effort' ? 'Editing Effort is not available.' : null
+  // null means "editable"; only a parent that never mentions Days leaves it unavailable.
+  if (reason === undefined) return key === 'effort' ? 'Editing Days is not available.' : null
   return reason
 }
 
@@ -189,7 +191,7 @@ const dueReason = computed(() => reasonFor('due'))
 const effortReason = computed(() => reasonFor('effort'))
 const anyEditable = computed(() => !startReason.value || !dueReason.value || !effortReason.value)
 
-/** The Effort box as days: a number, null when empty, NaN when not a number. */
+/** The Days box: a number, null when empty, NaN when not a number. */
 const effortValue = computed<number | null>(() => {
   const text = String(effortInput.value ?? '').trim()
   return text === '' ? null : Number(text)
@@ -216,7 +218,7 @@ const validation = computed<string | null>(() => {
   // ISO dates compare correctly as strings.
   if (dueInput.value < startInput.value) return 'End is before Start.'
   const effort = effortValue.value
-  if (effort !== null && !(Number.isFinite(effort) && effort > 0)) return 'Effort must be a number of days above zero.'
+  if (effort !== null && !(Number.isFinite(effort) && effort > 0)) return 'Days must be a number above zero.'
   return null
 })
 
@@ -225,38 +227,96 @@ const days = computed(() =>
   parsedStart.value && parsedDue.value ? countWorkingDays(parsedStart.value, parsedDue.value) : null,
 )
 
-/** Effort as it would be after saving: the box if it can be edited, else the issue's. */
-const effectiveEffort = computed<number | null>(() => {
+/** Days as it would be after saving: the box if it can be edited, else the issue's. */
+const effectiveDays = computed<number | null>(() => {
   if (effortReason.value) return props.task.effortDays
   const effort = effortValue.value
   return effort !== null && Number.isFinite(effort) && effort > 0 ? effort : null
 })
 
 /**
- * Fewer working days than Effort. A warning, never a block: Effort is
- * person-days, and two people can finish five days of effort in three.
+ * Start–End and Days disagree, either way. A warning, never a block: the
+ * user decides, since the tool cannot see everything (shared or part-time
+ * work, say).
  */
 const conflict = computed<string | null>(() => {
-  const effort = effectiveEffort.value
-  if (effort === null || days.value === null || days.value >= effort) return null
+  const effort = effectiveDays.value
+  if (effort === null || days.value === null || daysAligned(days.value, effort)) return null
   return effortConflict(days.value, effort)
 })
 
-/** The End that Start + Effort gives, when it would change the End box. */
-const endFromEffort = computed<Date | null>(() => {
-  const effort = effectiveEffort.value
-  if (dueReason.value || effort === null || !parsedStart.value) return null
+/** The Days that Start–End gives, when it would change the Days box. */
+const daysFromDates = computed<number | null>(() => {
+  if (effortReason.value || !days.value) return null
+  const effort = effectiveDays.value
+  return effort !== null && daysAligned(days.value, effort) ? null : days.value
+})
+
+function setDaysFromDates(): void {
+  if (daysFromDates.value !== null) effortInput.value = effortToInput(daysFromDates.value)
+}
+
+/** The End that Start + Days gives, when it would change the End box. */
+const endFromDays = computed<Date | null>(() => {
+  const effort = effectiveDays.value
+  if (dueReason.value || effort === null || !parsedStart.value || !conflict.value) return null
   const end = endAfterWorkingDays(parsedStart.value, effort)
   return toInput(end) === dueInput.value ? null : end
 })
 
-function setEndFromEffort(): void {
-  if (endFromEffort.value) dueInput.value = toInput(endFromEffort.value)
+function setEndFromDays(): void {
+  if (endFromDays.value) dueInput.value = toInput(endFromDays.value)
 }
+
+/** The Start that End − Days gives, when it would change the Start box. */
+const startFromDays = computed<Date | null>(() => {
+  const effort = effectiveDays.value
+  if (startReason.value || effort === null || !parsedDue.value || !conflict.value) return null
+  const start = startBeforeWorkingDays(parsedDue.value, effort)
+  return toInput(start) === startInput.value ? null : start
+})
+
+function setStartFromDays(): void {
+  if (startFromDays.value) startInput.value = toInput(startFromDays.value)
+}
+
+/**
+ * Days to write on opening, unasked, so the dates and Days agree: only when
+ * both dates are real field values and the Days field is empty. A date from
+ * the milestone or a default was never chosen, and a Days value that is
+ * already there, even a mismatched one, is the user's call. `effort` is
+ * checked as well as `effortDays` so a stored 0 is not overwritten.
+ */
+const autoFillDays = computed<number | null>(() => {
+  const task = props.task
+  if (effortReason.value || task.effortDays !== null || task.effort !== null) return null
+  if (task.dateSources.start !== 'field' || task.dateSources.due !== 'field') return null
+  const count = countWorkingDays(task.start, task.due)
+  return count > 0 ? count : null
+})
+const autoFilled = ref<number | null>(null)
+const autoFillError = ref<string | null>(null)
+let autoFillTried = false
+
+// A watch, not onMounted: whether Days is editable waits on the field lookup,
+// which may finish after the panel opens. Tried at most once per panel, and
+// never after the user has saved: clearing Days, or saving a first End, must
+// not be followed by a write they did not ask for.
+watch(
+  autoFillDays,
+  async (count) => {
+    if (count === null || autoFillTried || isDirty.value || !props.save) return
+    autoFillTried = true
+    const error = await props.save({ effort: count })
+    if (error) autoFillError.value = error
+    else autoFilled.value = count
+  },
+  { immediate: true },
+)
 
 const SOURCE_NOTES: Record<DateSource, string | null> = {
   field: null,
-  effort: 'from Effort',
+  effort: 'from Days',
   milestone: 'from the milestone',
   default: 'default length',
   created: 'issue created',
@@ -282,6 +342,7 @@ function revert(): void {
 
 async function onSave(): Promise<void> {
   if (!props.save || !isDirty.value || validation.value || saving.value) return
+  autoFillTried = true
   saving.value = true
   saveError.value = null
   justSaved.value = false
@@ -359,11 +420,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
         </dd>
         <dt class="text-gray-500">Length</dt>
         <dd>{{ days === null ? '—' : `${days} working day${days === 1 ? '' : 's'}` }}</dd>
-        <dt class="text-gray-500"><label for="detail-effort">Effort</label></dt>
+        <dt class="text-gray-500"><label for="detail-days">Days</label></dt>
         <dd>
           <span v-if="!effortReason" class="inline-flex items-center gap-1">
             <input
-              id="detail-effort"
+              id="detail-days"
               v-model="effortInput"
               type="number"
               min="0.5"
@@ -372,7 +433,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
               placeholder="—"
               class="w-20 rounded border border-gray-300 px-2 py-1"
             >
-            <span class="text-gray-500">days</span>
+            <span class="text-gray-500">working days</span>
           </span>
           <span v-else :title="effortReason">
             {{ task.effortDays !== null ? formatDays(task.effortDays) : (task.effort ?? '—') }}
@@ -380,19 +441,45 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
         </dd>
       </dl>
 
-      <button
-        v-if="endFromEffort"
-        type="button"
-        class="mt-2 text-xs underline decoration-gray-400 hover:decoration-gray-900"
-        @click="setEndFromEffort"
-      >
-        Set End from Effort ({{ formatDay(endFromEffort) }})
-      </button>
-
-      <!-- Live, from the boxes: saved conflicts are also listed with the warnings below. -->
-      <p v-if="conflict && isDirty" role="status" class="mt-2 rounded bg-amber-50 p-2 text-xs text-amber-900">
-        {{ conflict }} Saving is allowed — more than one person may share the work.
+      <p v-if="autoFilled !== null && !isDirty" role="status" class="mt-2 text-xs text-green-700">
+        Days set to {{ autoFilled }} from Start–End and saved to GitHub.
       </p>
+      <p v-if="autoFillError" class="mt-2 text-xs text-gray-500">
+        Could not fill in Days from Start–End: {{ autoFillError }}
+      </p>
+
+      <!-- Live, from the boxes, so it also covers dates written outside this app. -->
+      <p v-if="conflict" role="status" class="mt-2 rounded bg-amber-50 p-2 text-xs text-amber-900">
+        {{ conflict }} Adjust one below, or keep them as they are — the tool may not know
+        everything, such as shared or part-time work.
+      </p>
+
+      <div v-if="daysFromDates !== null || endFromDays || startFromDays" class="mt-2 flex flex-col items-start gap-1">
+        <button
+          v-if="daysFromDates !== null"
+          type="button"
+          class="text-xs underline decoration-gray-400 hover:decoration-gray-900"
+          @click="setDaysFromDates"
+        >
+          Set Days from Start–End ({{ daysFromDates }})
+        </button>
+        <button
+          v-if="endFromDays"
+          type="button"
+          class="text-xs underline decoration-gray-400 hover:decoration-gray-900"
+          @click="setEndFromDays"
+        >
+          Set End from Days ({{ formatDay(endFromDays) }})
+        </button>
+        <button
+          v-if="startFromDays"
+          type="button"
+          class="text-xs underline decoration-gray-400 hover:decoration-gray-900"
+          @click="setStartFromDays"
+        >
+          Set Start from Days ({{ formatDay(startFromDays) }})
+        </button>
+      </div>
 
       <!-- Once per reason: the same one usually covers both dates. -->
       <p

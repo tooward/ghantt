@@ -1,6 +1,6 @@
 # The issue fields a repository offers, with the ids a write needs and each
-# field's kind, so the panel can say "Effort is a single-select field here"
-# rather than just "no Effort field". Separate from the board query on
+# field's kind, so the panel can say "Days is a single-select field here"
+# rather than just "no Days field". Separate from the board query on
 # purpose: if this fails, editing is off, not the chart.
 query RepoFields($owner: String!, $repo: String!) {
   repository(owner: $owner, name: $repo) {

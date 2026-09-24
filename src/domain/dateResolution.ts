@@ -25,11 +25,11 @@ export interface DateInputs {
   milestoneDue: string | null
   /** Always present on a GitHub issue — the last rung of the chain. */
   createdAt: string
-  /** Working days of effort, from a Number field; null when unset or not above zero. */
+  /** Working days of effort, from the Days Number field; null when unset or not above zero. */
   effortDays?: number | null
 }
 
-/** Where a resolved date came from, so the UI can say "(from Effort)" and so on. */
+/** Where a resolved date came from, so the UI can say "(from Days)" and so on. */
 export type DateSource = 'field' | 'effort' | 'milestone' | 'default' | 'created'
 
 export interface ResolvedDates {
@@ -52,12 +52,12 @@ export const DEFAULT_TASK_DAYS = 1
  * (ARCHITECTURE.md §5.3). First match wins on each chain. Start and End are
  * both whole days: Oct 1 → Oct 1 is a one-day task.
  *
- * Due:   date field -> Start field + Effort (working days) -> milestone due
+ * Due:   date field -> Start field + Days (working days) -> milestone due
  *        -> start + the default length.
- * Start: date field -> the resolved due date minus Effort -> the resolved due
+ * Start: date field -> the resolved due date minus Days -> the resolved due
  *        date minus the default length -> `createdAt`.
  *
- * Only the Start *field* feeds the Effort rung of the due chain, never a
+ * Only the Start *field* feeds the Days rung of the due chain, never a
  * derived start, so the two chains cannot feed each other. Backing off from
  * whichever due date won (rather than from the milestone specifically) avoids
  * an issue with an explicit due date, no start, and a later milestone taking
@@ -66,11 +66,11 @@ export const DEFAULT_TASK_DAYS = 1
  *
  * Every length is counted in working days through `workingDays.ts`.
  *
- * When both dates come from fields and leave fewer working days than Effort,
- * that is reported as a warning. GitHub itself never checks, so this catches
- * conflicts written anywhere, not only through this app. It is a warning,
- * not a correction: Effort is person-days, and two people can finish five
- * days of effort in three.
+ * When both dates come from fields and their working days do not match
+ * Days, in either direction, that is reported as a warning. GitHub itself
+ * never checks, so this catches mismatches written anywhere, not only
+ * through this app. It is a warning, not a correction: the user decides,
+ * since the tool cannot see everything (shared or part-time work, say).
  *
  * Issue body lines (`GanttStart:` / `GanttDue:`) were once a rung here too.
  * They were removed as fragile once organisation issue fields existed.
@@ -135,15 +135,23 @@ export function resolveDates(i: DateInputs, cfg: DateResolutionConfig): Resolved
 
   if (effort && startSource === 'field' && dueSource === 'field') {
     const available = countWorkingDays(start, due, calendar)
-    if (available < effort) warnings.push(effortConflict(available, effort))
+    if (!daysAligned(available, effort)) warnings.push(effortConflict(available, effort))
   }
 
   return { start, due, sources: { start: startSource, due: dueSource }, warnings }
 }
 
-/** The one wording for an effort conflict, shared by the bar and the panel. */
+/**
+ * Whether a Start–End span of `available` working days matches `days`. Days
+ * rounds up, as `endAfterWorkingDays` does: 2.5 Days fills three working days.
+ */
+export function daysAligned(available: number, days: number): boolean {
+  return available === Math.ceil(days)
+}
+
+/** The one wording for a Days mismatch, shared by the bar and the panel. */
 export function effortConflict(available: number, effort: number): string {
-  return `Start–End gives ${available} working day${available === 1 ? '' : 's'}; Effort is ${formatDays(effort)}.`
+  return `Start–End gives ${available} working day${available === 1 ? '' : 's'}; Days is set to ${effort}.`
 }
 
 export function formatDays(days: number): string {

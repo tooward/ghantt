@@ -105,7 +105,7 @@ describe('mapIssue — permissions', () => {
 
 describe('mapIssue — effort', () => {
   it('reads a number field, matching the name case-insensitively', () => {
-    expect(mapIssue(syntheticNodes[0], cfg).effort).toBe('5')
+    expect(mapIssue(syntheticNodes[0], cfg).effort).toBe('6')
   })
 
   it('reads a single-select field as its option name', () => {
@@ -114,39 +114,54 @@ describe('mapIssue — effort', () => {
 
   it('is null when the issue has no effort, or the name is configured away', () => {
     expect(mapIssue(syntheticNodes[2], cfg).effort).toBeNull()
-    expect(mapIssue(syntheticNodes[0], { ...cfg, effortFieldName: 'Size' }).effort).toBeNull()
+    expect(mapIssue(syntheticNodes[0], { ...cfg, daysFieldName: 'Size' }).effort).toBeNull()
   })
 
-  it('calculates only with a Number Effort above zero', () => {
-    expect(mapIssue(syntheticNodes[0], cfg).effortDays).toBe(5)
-    // A single-select Effort is shown, but never calculated with.
+  it('calculates only with a Number Days above zero', () => {
+    expect(mapIssue(syntheticNodes[0], cfg).effortDays).toBe(6)
+    // A single-select Days is shown, but never calculated with.
     expect(mapIssue(syntheticNodes[1], cfg).effort).toBe('M')
     expect(mapIssue(syntheticNodes[1], cfg).effortDays).toBeNull()
   })
 
-  it('fits node 0’s dates to its Effort, so it carries no warning', () => {
-    // Mon 2 – Mon 9 Mar is six working days; Effort is five.
+  it('fits node 0’s dates to its Days, so it carries no warning', () => {
+    // Mon 2 – Mon 9 Mar is six working days, and Days is six.
     expect(mapIssue(syntheticNodes[0], cfg).warnings).toEqual([])
   })
 
-  it('warns when the dates are shorter than a Number Effort', () => {
+  it('warns when the dates are shorter than a Number Days', () => {
     const node = {
       ...syntheticNodes[0],
       issueFieldValues: {
         nodes: [
           { __typename: 'IssueFieldDateValue', value: '2026-10-01', field: { name: 'Start' } },
           { __typename: 'IssueFieldDateValue', value: '2026-10-05', field: { name: 'End' } },
-          { __typename: 'IssueFieldNumberValue', numberValue: 5, field: { name: 'Effort' } },
+          { __typename: 'IssueFieldNumberValue', numberValue: 5, field: { name: 'Days' } },
         ],
       },
     } as GitHubIssueNode
 
-    expect(mapIssue(node, cfg).warnings).toEqual(['Start–End gives 3 working days; Effort is 5 days.'])
+    expect(mapIssue(node, cfg).warnings).toEqual(['Start–End gives 3 working days; Days is set to 5.'])
+  })
+
+  it('reads Days, not a single-select Effort field alongside it', () => {
+    const node = {
+      ...syntheticNodes[0],
+      issueFieldValues: {
+        nodes: [
+          { __typename: 'IssueFieldSingleSelectValue', optionName: 'L', field: { name: 'Effort' } },
+          { __typename: 'IssueFieldNumberValue', numberValue: 3, field: { name: 'Days' } },
+        ],
+      },
+    } as GitHubIssueNode
+
+    expect(mapIssue(node, cfg).effort).toBe('3')
+    expect(mapIssue(node, cfg).effortDays).toBe(3)
   })
 
   it('does not take another select field for effort', () => {
-    // Node 0 also has a Priority select; only the Effort field counts.
-    expect(mapIssue(syntheticNodes[0], { ...cfg, effortFieldName: 'Priority' }).effort).toBe('High')
+    // Node 0 also has a Priority select; only the Days field counts.
+    expect(mapIssue(syntheticNodes[0], { ...cfg, daysFieldName: 'Priority' }).effort).toBe('High')
     expect(mapIssue(syntheticNodes[0], cfg).effort).not.toBe('High')
   })
 })

@@ -66,7 +66,7 @@ class FakeWriter implements IssueWriter {
   constructor(repoFields: IssueFieldRef[] = [
     { id: 'F_start', name: 'Start', kind: 'date' },
     { id: 'F_end', name: 'End', kind: 'date' },
-    { id: 'F_effort', name: 'Effort', kind: 'number' },
+    { id: 'F_effort', name: 'Days', kind: 'number' },
   ]) {
     this.repoFields = repoFields
   }
@@ -248,6 +248,59 @@ describe('board store', () => {
     expect(board.repo).toEqual({ owner: 'acme', name: 'gadgets', issueType: null })
   })
 
+  it('refreshes from the first page, keeping the chart up until the new issues arrive', async () => {
+    const board = useBoardStore()
+    const source = new FakeSource([pageOf([task('#1')], null, 1)])
+    board.useSource(source)
+    await board.loadRepo('o', 'r', 'Feature')
+
+    const pending = board.refresh()
+    expect(board.loading).toBe(true)
+    expect(board.tasks.map((t) => t.id)).toEqual(['#1'])
+    await pending
+
+    expect(source.calls).toEqual([
+      { repo: { owner: 'o', name: 'r', issueType: 'Feature' }, cursor: null },
+      { repo: { owner: 'o', name: 'r', issueType: 'Feature' }, cursor: null },
+    ])
+  })
+
+  it('shows what GitHub now has after a refresh', async () => {
+    const board = useBoardStore()
+    const pages = [pageOf([task('#1')], null, 1)]
+    board.useSource(new FakeSource(pages))
+    await board.loadRepo('o', 'r')
+
+    pages[0] = pageOf([task('#1'), task('#2')], null, 2)
+    await board.refresh()
+
+    expect(board.tasks.map((t) => t.id)).toEqual(['#1', '#2'])
+    expect(board.totalCount).toBe(2)
+  })
+
+  it('keeps the chart and reports the error when a refresh fails', async () => {
+    const board = useBoardStore()
+    const pages = [pageOf([task('#1')], null, 1)]
+    board.useSource(new FakeSource(pages))
+    await board.loadRepo('o', 'r')
+
+    pages.length = 0
+    await board.refresh()
+
+    expect(board.tasks.map((t) => t.id)).toEqual(['#1'])
+    expect(board.error).toContain('no page')
+  })
+
+  it('does nothing on refresh before a repository is loaded', async () => {
+    const board = useBoardStore()
+    const source = new FakeSource([])
+    board.useSource(source)
+
+    await board.refresh()
+
+    expect(source.calls).toEqual([])
+  })
+
   it('does not page past the end', async () => {
     const board = useBoardStore()
     const source = new FakeSource([pageOf([task('a')], null, 1)])
@@ -316,7 +369,7 @@ describe('board store at board scale', () => {
     it('looks up the date fields beside the board and makes both dates editable', async () => {
       const board = await boardWith(new FakeWriter())
 
-      expect(board.fields.map((field) => field.name)).toEqual(['Start', 'End', 'Effort'])
+      expect(board.fields.map((field) => field.name)).toEqual(['Start', 'End', 'Days'])
       expect(board.fieldEditability).toEqual({ start: null, due: null, effort: null })
     })
 
@@ -369,7 +422,7 @@ describe('board store at board scale', () => {
       expect(writer.writes).toEqual([])
     })
 
-    it('writes Effort as a number, and clears it with null', async () => {
+    it('writes Days as a number, and clears it with null', async () => {
       const writer = new FakeWriter()
       const board = await boardWith(writer)
 
@@ -382,7 +435,7 @@ describe('board store at board scale', () => {
       ])
     })
 
-    it('sends dates and Effort together in one write', async () => {
+    it('sends dates and Days together in one write', async () => {
       const writer = new FakeWriter()
       const board = await boardWith(writer)
 
@@ -392,32 +445,32 @@ describe('board store at board scale', () => {
       expect(writer.writes[0].values.map((v) => v.fieldId)).toEqual(['F_end', 'F_effort'])
     })
 
-    it('refuses an Effort that is not above zero', async () => {
+    it('refuses an Days that is not above zero', async () => {
       const writer = new FakeWriter()
       const board = await boardWith(writer)
 
-      expect(await board.saveFields('a', { effort: 0 })).toBe('Effort must be a number of days above zero.')
+      expect(await board.saveFields('a', { effort: 0 })).toBe('Days must be a number above zero.')
       expect(writer.writes).toEqual([])
     })
 
-    it('says so when Effort is a single-select field, which cannot be calculated with', async () => {
+    it('says so when Days is a single-select field, which cannot be calculated with', async () => {
       const writer = new FakeWriter([
         { id: 'F_start', name: 'Start', kind: 'date' },
         { id: 'F_end', name: 'End', kind: 'date' },
-        { id: 'F_effort', name: 'Effort', kind: 'single-select' },
+        { id: 'F_effort', name: 'Days', kind: 'single-select' },
       ])
       const board = await boardWith(writer)
 
       expect(board.fieldEditability.start).toBeNull()
-      expect(board.fieldEditability.effort).toBe('“Effort” is a single-select field here; editing needs a number field.')
+      expect(board.fieldEditability.effort).toBe('“Days” is a single-select field here; editing needs a number field.')
       expect(await board.saveFields('a', { effort: 3 })).toContain('single-select')
       expect(writer.writes).toEqual([])
     })
 
-    it('says which Effort field is missing', async () => {
+    it('says which Days field is missing', async () => {
       const board = await boardWith(new FakeWriter([{ id: 'F_start', name: 'Start', kind: 'date' }]))
 
-      expect(board.fieldEditability.effort).toBe('This repository has no field named “Effort”.')
+      expect(board.fieldEditability.effort).toBe('This repository has no field named “Days”.')
     })
 
     it('is read-only when the source cannot write', async () => {

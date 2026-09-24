@@ -16,7 +16,7 @@
 
 // @vitest-environment jsdom
 import { mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Task, TaskId } from '../src/domain/Task'
 import GanttChart from '../src/ui/components/GanttChart.vue'
 
@@ -50,6 +50,68 @@ describe('GanttChart', () => {
     const wrapper = await mountChart([task('a'), task('b', ['a'])])
 
     expect(wrapper.element.querySelectorAll('.bar-wrapper')).toHaveLength(2)
+  })
+
+  it('draws blank rows beneath the last bar, and keeps them as tasks are added', async () => {
+    // frappe's row loop also draws a sliver of one more row; three whole ones are the point.
+    const rows = (wrapper: Awaited<ReturnType<typeof mountChart>>) =>
+      wrapper.element.querySelectorAll('.grid-row').length
+
+    const wrapper = await mountChart([task('a'), task('b')])
+    expect(rows(wrapper)).toBeGreaterThanOrEqual(2 + 3)
+
+    await wrapper.setProps({ tasks: [task('a'), task('b'), task('c'), task('d')] })
+    expect(rows(wrapper)).toBeGreaterThanOrEqual(4 + 3)
+    expect(rows(wrapper)).toBeLessThanOrEqual(4 + 4)
+  })
+
+  describe('labels', () => {
+    const proto = SVGElement.prototype as SVGElement & { getComputedTextLength: () => number }
+    const original = proto.getComputedTextLength
+    afterEach(() => {
+      proto.getComputedTextLength = original
+    })
+
+    const labelOf = (wrapper: Awaited<ReturnType<typeof mountChart>>, id: string) =>
+      wrapper.element.querySelector(`.bar-wrapper[data-id="${id}"] .bar-label`)!.textContent
+    const tooltipOf = (wrapper: Awaited<ReturnType<typeof mountChart>>, id: string) =>
+      wrapper.element.querySelector(`.bar-wrapper[data-id="${id}"] > title`)?.textContent
+
+    it('cuts a label that is wider than its bar, and puts the full name in the tooltip', async () => {
+      // Far wider than any bar, so every label must be cut.
+      proto.getComputedTextLength = function (this: SVGElement) {
+        return (this.textContent ?? '').length * 1000
+      }
+      const wrapper = await mountChart([{ ...task('a'), title: 'A rather long issue title' }])
+
+      expect(labelOf(wrapper, 'a')).toBe('')
+      expect(tooltipOf(wrapper, 'a')).toBe('#1 A rather long issue title')
+    })
+
+    it('ends a cut label in an ellipsis inside the bar', async () => {
+      proto.getComputedTextLength = function (this: SVGElement) {
+        return (this.textContent ?? '').length * 7
+      }
+      const wrapper = await mountChart([{ ...task('a'), title: 'A rather long issue title that will not fit in a week' }])
+      const width = Number(wrapper.element.querySelector('.bar-wrapper[data-id="a"] .bar')!.getAttribute('width'))
+
+      const label = labelOf(wrapper, 'a')!
+      expect(label.endsWith('…')).toBe(true)
+      expect(label.length * 7).toBeLessThanOrEqual(width)
+    })
+
+    it('adds warnings to the tooltip after the name', async () => {
+      const wrapper = await mountChart([{ ...task('a'), warnings: ['No usable date at all; the bar starts today.'] }])
+
+      expect(tooltipOf(wrapper, 'a')).toBe('#1 Issue a\nNo usable date at all; the bar starts today.')
+    })
+
+    it('draws a title containing markup as plain text', async () => {
+      const wrapper = await mountChart([{ ...task('a'), title: '<img src=x onerror="window.pwned=1">' }])
+
+      expect(wrapper.element.querySelector('.bar-label img, .bar-label image')).toBeNull()
+      expect(tooltipOf(wrapper, 'a')).toBe('#1 <img src=x onerror="window.pwned=1">')
+    })
   })
 
   it('draws an arrow for a dependency', async () => {

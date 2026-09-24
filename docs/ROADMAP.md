@@ -4,22 +4,20 @@ What is planned, in rough order, and what has shipped. Decisions and the
 schema facts behind them are in [ARCHITECTURE.md](ARCHITECTURE.md); the
 original phased build is in [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
 
-Last updated 2026-09-23.
+Last updated 2026-09-24.
 
 ---
 
-## Next — Effort: check against real data
+## Next — Days: check against real data
 
-Effort in working days is built (see *Shipped*). It has only been tested against faked GitHub responses, because the organisation's Effort field is still a single select. Once it is a Number field (steps below), check on a few Features: Length and the conflict warning, Save anyway, Set End from Effort, and editing and clearing Effort.
+The effort-in-working-days work (see *Shipped*) reads a Number issue field, now named **Days** by default. The organisation's `Effort` field stayed a single select for another purpose, so a separate `Days` Number field was created (confirmed via `RepoFields` on 2026-09-24). Everything has so far been tested only against faked GitHub responses. On 2026-09-24 no open issue in the organisation had a Days, Start or End value yet. Once a few Features do, check: filling Days on opening, the mismatch warning both ways, the three Set buttons, Save anyway, and editing and clearing Days.
 
-**Moving an existing single-select Effort to a Number field** (a field's type is fixed when it is created — `updateIssueField` can rename it but not change its type):
+Anyone who saved settings before the rename gets `Days` automatically: the old `effortFieldName` setting is ignored rather than carried over, since it would now point at the wrong field.
 
-1. In the organisation's issue fields, rename the old field, e.g. to `Effort (old)`.
-2. Create a new **Number** field named `Effort` and enable it on the issue types in use (e.g. Feature).
-3. Re-enter the values as days on each issue; the old field shows what each one had.
-4. Delete the old field once nothing reads it.
+Also open:
 
-Until then the panel shows the single-select value and says “Effort” is a single-select field, so editing and calculations are off; nothing breaks.
+- **Emptying Days does not stick** while both dates are set: the next time the issue is opened, Days is filled in from Start–End again. If some issues should deliberately have no Days, the panel would need to remember that.
+- **Only opened issues are filled in.** Days is written when an issue's panel is opened, not across the whole board on load. A bulk "fill Days on every issue" action would be a separate, explicit step.
 
 ---
 
@@ -27,10 +25,10 @@ Until then the panel shows the single-select value and says “Effort” is a si
 
 ### Working-day calendars
 
-Named calendars that the one calendar module (above) reads, so users can mark days that are not worked — public holidays, shutdowns, a team offsite — and have them skipped wherever days are counted: bar length, the effort check, and End from Start + Effort.
+Named calendars that the one calendar module (above) reads, so users can mark days that are not worked — public holidays, shutdowns, a team offsite — and have them skipped wherever days are counted: bar length, the Days check, and End from Start + Days.
 
 - A calendar is a set of non-working dates, plus the working-week pattern below.
-- Open questions: where calendars live so a whole team shares them (a file in a repository, an issue, or per-browser settings — shared is strongly preferred, for the same reason Effort's meaning lives in GitHub), and whether different issues or teams can use different calendars.
+- Open questions: where calendars live so a whole team shares them (a file in a repository, an issue, or per-browser settings — shared is strongly preferred, for the same reason Days' meaning lives in GitHub), and whether different issues or teams can use different calendars.
 
 ### Configurable working week
 
@@ -42,7 +40,7 @@ Bars are a single light green today, on purpose: colour is kept free so it can c
 
 ### Drag bars to change dates
 
-Move or resize a bar to change Start/End. Needs an optimistic update with rollback on failure, and the same effort-conflict check as the panel.
+Move or resize a bar to change Start/End. Needs an optimistic update with rollback on failure, and the same Days conflict check as the panel.
 
 ### Warn on unmatched field names
 
@@ -52,6 +50,8 @@ When an issue has date fields but none match the configured names, say so on the
 
 ## Shipped
 
+- **Dates and Days kept in step** (2026-09-24). Opening an issue with a Start and End field but no Days saves Days from Start–End (never overwriting an existing Days, even `0`). A mismatch is now flagged both ways, not only when the dates are shorter, and a part day counts as the whole day. The panel offers Set Days from Start–End, Set End from Days and Set Start from Days whenever the three disagree, and Save anyway keeps what the user chose.
+- **Days field renamed** (2026-09-24): the default field is `Days`, not `Effort`; labels, messages and the settings key follow. Internal names (`effortDays`, the `'effort'` date source) still say effort, which is what Days measures.
 - **Effort in working days** (2026-09-23). Decisions: Effort is a GitHub **Number** field in working days (GitHub stores it as a `Float` and accepts only numbers, so no parsing and no fixed sizing scheme; values not above zero are ignored); working days are **Monday to Friday**, hard-coded for now; **Start and End both count** (Oct 1 → Oct 1 is one day); on a conflict, **warn, never block** (Effort is person-days — two people can finish five days of effort in three). Built:
   - one calendar module, `domain/workingDays.ts`, for every day count — nothing else counts days;
   - End from Start + Effort, and Start from End − Effort, in the date chain; the default length is now working days too, so a one-day default is drawn one day long (it was drawn two);

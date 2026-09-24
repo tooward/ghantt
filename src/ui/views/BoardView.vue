@@ -73,10 +73,6 @@ const isFirstLoad = computed(() => board.loading && board.tasks.length === 0)
     <ChartSkeleton v-if="isFirstLoad" />
 
     <div v-else-if="board.tasks.length" class="mt-6">
-      <p class="text-sm text-gray-600" aria-live="polite">
-        Showing {{ board.graph.tasks.length }} of {{ board.totalCount }} open {{ issueNoun }}.
-      </p>
-
       <GraphNotice
         :dropped-edges="board.graph.droppedEdges"
         :broken-cycles="board.graph.brokenCycles"

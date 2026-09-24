@@ -41,7 +41,7 @@ describe('SettingsPanel', () => {
     await wrapper.setProps({ open: true })
 
     expect(showModal).toHaveBeenCalledOnce()
-    expect(wrapper.get('#effort-field').exists()).toBe(true)
+    expect(wrapper.get('#days-field').exists()).toBe(true)
     wrapper.unmount()
   })
 

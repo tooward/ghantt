@@ -70,7 +70,7 @@ onMounted(() => {
 
 <template>
   <div class="border-b border-gray-200 bg-gray-50">
-    <div class="mx-auto flex max-w-5xl items-center gap-3 px-6 py-2">
+    <div class="flex items-center gap-3 px-6 py-2">
       <button
         type="button"
         class="flex min-w-0 items-center gap-2 rounded border border-gray-300 bg-white px-3 py-1.5 text-sm hover:bg-gray-100"
@@ -92,6 +92,30 @@ onMounted(() => {
           aria-hidden="true"
         >
           <path d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.17l3.71-3.94a.75.75 0 1 1 1.08 1.04l-4.25 4.5a.75.75 0 0 1-1.08 0l-4.25-4.5a.75.75 0 0 1 .02-1.06Z" />
+        </svg>
+      </button>
+      <button
+        v-if="board.repo"
+        type="button"
+        class="rounded border border-gray-300 bg-white p-1.5 text-gray-600 hover:bg-gray-100 disabled:opacity-50"
+        aria-label="Refresh"
+        title="Download the issues again"
+        :disabled="board.loading"
+        @click="board.refresh()"
+      >
+        <!-- Heroicons arrow-path (MIT). Spins while loading. -->
+        <svg
+          viewBox="0 0 20 20"
+          class="h-4 w-4 motion-reduce:animate-none"
+          :class="board.loading ? 'animate-spin' : ''"
+          fill="currentColor"
+          aria-hidden="true"
+        >
+          <path
+            fill-rule="evenodd"
+            clip-rule="evenodd"
+            d="M15.312 11.424a5.5 5.5 0 0 1-9.201 2.466l-.312-.311h2.433a.75.75 0 0 0 0-1.5H3.989a.75.75 0 0 0-.75.75v4.242a.75.75 0 0 0 1.5 0v-2.43l.31.31a7 7 0 0 0 11.712-3.138.75.75 0 0 0-1.449-.39Zm1.23-3.723a.75.75 0 0 0 .219-.53V2.929a.75.75 0 0 0-1.5 0V5.36l-.31-.31A7 7 0 0 0 3.239 8.188a.75.75 0 1 0 1.448.389A5.5 5.5 0 0 1 13.89 6.11l.311.31h-2.432a.75.75 0 0 0 0 1.5h4.243a.75.75 0 0 0 .53-.219Z"
+          />
         </svg>
       </button>
       <span v-if="board.loading" class="text-sm text-gray-500" aria-live="polite">Loading…</span>
@@ -120,7 +144,7 @@ onMounted(() => {
       @keydown.esc="open = false"
     >
       <div class="overflow-hidden">
-        <form class="mx-auto flex max-w-5xl flex-wrap items-end gap-3 px-6 pb-4 pt-2" @submit.prevent="onLoad">
+        <form class="flex flex-wrap items-end gap-3 px-6 pb-4 pt-2" @submit.prevent="onLoad">
           <div>
             <div class="flex items-center">
               <label for="owner" class="text-sm font-medium">Owner</label>
