@@ -57,20 +57,20 @@ GitHub issues have no start or due date, so each bar's dates are resolved by fal
 **Start date**
 
 1. An issue **date field** named `Start` (configurable, matched case-insensitively). Issue fields are organisation-level, so personal repositories have none — the rest of the chain always works.
-2. The resolved due date minus **Effort**, in working days.
+2. The resolved due date minus **Days**, in working days.
 3. The resolved due date minus the default task length.
 4. The issue's creation date, which always exists.
 
 **Due date**
 
 1. An issue **date field** named `End` (configurable).
-2. The **Start** field plus **Effort**, in working days.
+2. The **Start** field plus **Days**, in working days.
 3. The milestone's due date.
 4. The start date plus the default task length (1 working day by default, so the End is the Start).
 
-**Effort** is an issue field named `Effort` (configurable) of type **Number**, holding working days — `0.5`, `3`, `20`, whatever your team's sizing is. When Start and End are both set and leave fewer working days than Effort, the bar turns amber and the panel says so, e.g. "Start–End gives 3 working days; Effort is 5 days". That is a warning, not a block: Effort is person-days, and more than one person can share the work. GitHub itself never checks this, so the warning also catches dates changed in GitHub. A single-select Effort field is shown but not calculated with; see [docs/ROADMAP.md](docs/ROADMAP.md) for moving one to a Number field.
+**Days** is an issue field named `Days` (configurable) of type **Number**, holding the working days of effort a task needs — `0.5`, `3`, `20`, whatever your team's sizing is. Start–End and Days are meant to agree: a span of N working days matches a Days of N (a part day counts as the whole day, so 2.5 matches three). When Start and End are both set and do not match Days, in either direction, the bar turns amber and the panel says so, e.g. "Start–End gives 3 working days; Days is set to 5." That is a warning, not a block: the tool cannot see everything — shared or part-time work, say — so the user decides. GitHub itself never checks this, so the warning also catches dates changed in GitHub. A single-select field of that name is shown but not calculated with.
 
-Clicking a bar selects it and shows its start, end, effort and blockers in a panel at the top right of the chart, with a link to the issue in GitHub. Start, End and Effort can be changed there and saved to the issue's fields — Length shows the working days between Start and End, **Set End from Effort** fills in End from Start + Effort, and Save becomes **Save anyway** when the dates are shorter than Effort; only a date you changed is written, so one shown from the milestone or the creation date is never copied into a field by accident. A date is read-only when the repository has no date field of that name, or you cannot set fields on the issue. Effort is read from an issue field named `Effort` — a number or a single select — and is shown, not yet used to compute dates.
+Clicking a bar selects it and shows its start, end, Days and blockers in a panel at the top right of the chart, with a link to the issue in GitHub. Start, End and Days can be changed there and saved to the issue's fields. Length shows the working days between Start and End. **When an issue has both a Start and an End field but no Days, opening it fills in Days from Start–End and saves it straight away**; the panel says it did. A Days value that is already there is never overwritten automatically. Whenever the three disagree — as loaded, or after you change any of them — the panel offers **Set Days from Start–End**, **Set End from Days** and **Set Start from Days**; each fills its box and waits for Save, and Save becomes **Save anyway** while they still disagree. Only a value you changed is written, so a date shown from the milestone or the creation date is never copied into a field by accident. A date is read-only when the repository has no date field of that name, or you cannot set fields on the issue.
 
 Field names, the default task length and the page size are all editable in the app's Settings window (the gear icon in the header) and are remembered in local storage. Dates that cannot be parsed are ignored and reported on the bar rather than guessed at; a due date falling before its start is corrected and flagged.
 

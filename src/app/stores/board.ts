@@ -35,7 +35,7 @@ export interface BoardGraph {
 }
 
 /**
- * New values for one task: dates as `YYYY-MM-DD`, Effort in working days or
+ * New values for one task: dates as `YYYY-MM-DD`, Days in working days or
  * null to clear it. Only what the user changed.
  */
 export interface FieldChanges {
@@ -107,15 +107,15 @@ export const useBoardStore = defineStore('board', () => {
 
   const startField = computed(() => fieldNamed(settings.startFieldName))
   const dueField = computed(() => fieldNamed(settings.dueFieldName))
-  const effortField = computed(() => fieldNamed(settings.effortFieldName))
+  const effortField = computed(() => fieldNamed(settings.daysFieldName))
 
   const fieldEditability = computed<FieldEditability>(() => {
     const why = (field: IssueFieldRef | null, name: string, kind: FieldKind): string | null => {
       if (!writer.value) return 'Editing is not available.'
       if (fieldsError.value) return `Could not look up this repository’s issue fields: ${fieldsError.value}`
       if (!field) return `This repository has no ${kind === 'date' ? 'date ' : ''}field named “${name}”.`
-      // Say what it is: "Effort is a single-select field here" is the state
-      // an organisation is in until it migrates Effort to a Number field.
+      // Say what it is: "Days is a single-select field here" rather than
+      // just "no Days field", so a wrongly typed field is easy to spot.
       if (field.kind !== kind) {
         return `“${field.name}” is ${KIND_NAMES[field.kind]} field here; editing needs ${KIND_NAMES[kind]} field.`
       }
@@ -124,13 +124,14 @@ export const useBoardStore = defineStore('board', () => {
     return {
       start: why(startField.value, settings.startFieldName, 'date'),
       due: why(dueField.value, settings.dueFieldName, 'date'),
-      effort: why(effortField.value, settings.effortFieldName, 'number'),
+      effort: why(effortField.value, settings.daysFieldName, 'number'),
     }
   })
 
   const isEmpty = computed(() => !loading.value && tasks.value.length === 0)
 
-  async function fetchPage(cursorValue: string | null): Promise<void> {
+  /** `keepOnError`: a failed refresh leaves the chart that was already there. */
+  async function fetchPage(cursorValue: string | null, keepOnError = false): Promise<void> {
     const target = repo.value
     if (!target) return
 
@@ -146,7 +147,7 @@ export const useBoardStore = defineStore('board', () => {
       if (source.value instanceof GitHubIssueSource) rateLimit.value = source.value.lastRateLimit
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : 'Loading issues failed.'
-      if (cursorValue === null) tasks.value = []
+      if (cursorValue === null && !keepOnError) tasks.value = []
     } finally {
       loading.value = false
     }
@@ -177,7 +178,7 @@ export const useBoardStore = defineStore('board', () => {
   }
 
   /**
-   * Write new Start / End / Effort values to GitHub in one call and swap in the
+   * Write new Start / End / Days values to GitHub in one call and swap in the
    * issue as GitHub returns it. Resolves to an error message for the panel, or
    * null on success. Never touches the connection: a read-only token is a
    * failed save, not a logout.
@@ -197,10 +198,10 @@ export const useBoardStore = defineStore('board', () => {
     if (changes.effort !== undefined) {
       const field = effortField.value
       const reason = fieldEditability.value.effort
-      if (!field || reason) return reason ?? 'Effort cannot be edited.'
+      if (!field || reason) return reason ?? 'Days cannot be edited.'
       if (changes.effort === null) values.push({ fieldId: field.id, clear: true })
       else if (Number.isFinite(changes.effort) && changes.effort > 0) values.push({ fieldId: field.id, number: changes.effort })
-      else return 'Effort must be a number of days above zero.'
+      else return 'Days must be a number above zero.'
     }
     if (values.length === 0) return null
 
@@ -304,6 +305,20 @@ export const useBoardStore = defineStore('board', () => {
     return cause instanceof Error ? cause.message : 'Saving failed.'
   }
 
+  /**
+   * Download the charted repository again, from the first page. No diffing:
+   * the new page simply replaces what was there. The old chart stays up until
+   * it arrives, so the view does not blank out, and stays if the request fails.
+   */
+  async function refresh(): Promise<void> {
+    const target = repo.value
+    if (!target || loading.value) return
+    lookups.clear()
+    fieldsError.value = null
+    void loadFields(target)
+    await fetchPage(null, true)
+  }
+
   async function loadMore(): Promise<void> {
     if (!hasNextPage.value || loading.value) return
     await fetchPage(cursor.value)
@@ -350,6 +365,7 @@ export const useBoardStore = defineStore('board', () => {
     rateLimit,
     isEmpty,
     loadRepo,
+    refresh,
     loadMore,
     saveFields,
     linkBlocker,

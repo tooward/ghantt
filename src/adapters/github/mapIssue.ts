@@ -23,17 +23,17 @@ export interface MapConfig {
   startFieldName: string
   dueFieldName: string
   /**
-   * Effort, in working days. A Number field is calculated with; a
-   * single-select one is only shown, until it is migrated.
+   * The Days field: effort in working days. A Number field is calculated
+   * with; a single-select one is only shown.
    */
-  effortFieldName: string
+  daysFieldName: string
   defaultTaskDays: number
 }
 
 export const DEFAULT_MAP_CONFIG: MapConfig = {
   startFieldName: 'Start',
   dueFieldName: 'End',
-  effortFieldName: 'Effort',
+  daysFieldName: 'Days',
   defaultTaskDays: 1,
 }
 
@@ -45,7 +45,7 @@ export const DEFAULT_MAP_CONFIG: MapConfig = {
  * handed over unparsed and the domain layer decides whether it is usable.
  */
 export function mapIssue(node: GitHubIssueNode, cfg: MapConfig): Task {
-  const effortDays = effortNumber(node, cfg.effortFieldName)
+  const effortDays = effortNumber(node, cfg.daysFieldName)
   const { start, due, sources, warnings } = resolveDates(
     {
       fieldStart: dateFieldValue(node, cfg.startFieldName),
@@ -71,7 +71,7 @@ export function mapIssue(node: GitHubIssueNode, cfg: MapConfig): Task {
     dependsOn: blockedBy.map((ref) => ref.id),
     blockers: blockedBy.map((ref) => linkedIssue(ref, node)),
     blocking: (node.blocking?.nodes ?? []).filter(Boolean).map((ref) => linkedIssue(ref, node)),
-    effort: effortValue(node, cfg.effortFieldName),
+    effort: effortValue(node, cfg.daysFieldName),
     effortDays,
     dateSources: sources,
     canSetFields: node.viewerCanSetFields === true,
@@ -96,7 +96,7 @@ function dateFieldValue(node: GitHubIssueNode, fieldName: string): string | null
   return fieldValueNode(node, fieldName, ['IssueFieldDateValue'])?.value ?? null
 }
 
-/** Effort may be set up as a number field or a single select; accept either. */
+/** Days may be set up as a number field or a single select; accept either. */
 function effortValue(node: GitHubIssueNode, fieldName: string): string | null {
   const value = fieldValueNode(node, fieldName, ['IssueFieldNumberValue', 'IssueFieldSingleSelectValue'])
   if (!value) return null

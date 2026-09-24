@@ -76,6 +76,29 @@ describe('BoardToolbar', () => {
     wrapper.unmount()
   })
 
+  it('refreshes what is charted, not what is typed in the form', async () => {
+    window.localStorage.setItem(KEY, JSON.stringify({ lastOwner: 'acme', lastRepo: 'widgets', issueType: 'Feature' }))
+    const { wrapper } = mountToolbar()
+    await flushPromises()
+
+    await wrapper.get('#repo').setValue('other')
+    await wrapper.get('button[aria-label="Refresh"]').trigger('click')
+    await flushPromises()
+
+    expect(source.calls).toEqual([
+      { owner: 'acme', name: 'widgets', issueType: 'Feature' },
+      { owner: 'acme', name: 'widgets', issueType: 'Feature' },
+    ])
+    wrapper.unmount()
+  })
+
+  it('shows no refresh button until something is charted', () => {
+    const { wrapper } = mountToolbar()
+
+    expect(wrapper.find('button[aria-label="Refresh"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('toggles from the button', async () => {
     window.localStorage.setItem(KEY, JSON.stringify({ lastOwner: 'acme', lastRepo: 'widgets' }))
     const { wrapper } = mountToolbar()

@@ -45,9 +45,9 @@
                 },
                 {
                   "__typename": "IssueFieldNumberValue",
-                  "numberValue": 5,
+                  "numberValue": 6,
                   "field": {
-                    "name": "effort"
+                    "name": "days"
                   }
                 },
                 {
@@ -97,7 +97,7 @@
                   "__typename": "IssueFieldSingleSelectValue",
                   "optionName": "M",
                   "field": {
-                    "name": "Effort"
+                    "name": "Days"
                   }
                 }
               ]

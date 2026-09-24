@@ -19,7 +19,8 @@ import Gantt, { type FrappeOptions, type FrappeTask, type FrappeViewMode } from 
 import { onBeforeUnmount, shallowRef, watch } from 'vue'
 import type { Task, TaskId } from '../../domain/Task'
 import { finishToStartPath, type BarBox } from './arrowPaths'
-import { toFrappeTasks } from './frappeTasks'
+import { fitLabel, LABEL_INSET } from './barLabels'
+import { barName, toFrappeTasks } from './frappeTasks'
 import 'frappe-gantt/dist/frappe-gantt.css'
 
 const props = defineProps<{
@@ -46,9 +47,22 @@ function selectTask(frappeTask: FrappeTask): void {
   emit('select', frappeTask.id === props.selectedId ? null : frappeTask.id)
 }
 
+/** Blank rows under the last bar, so the chart does not end hard against its last issue. */
+const EMPTY_ROWS = 3
+
+/**
+ * The grid height frappe would pick for `count` rows, plus the blank ones. The
+ * same sum as its own (`make_grid_background`), using the defaults this app
+ * leaves alone: bars 30 high, 18 between rows, a 45 + 30 + 10 header.
+ */
+function chartHeight(count: number): number {
+  return 85 + 18 + (30 + 18) * (count + EMPTY_ROWS) - 10
+}
+
 function options(): FrappeOptions {
   return {
     view_mode: props.viewMode,
+    container_height: chartHeight(props.tasks.length),
     // This app never edits: the chart is a view of GitHub, not an editor.
     readonly: true,
     popup: false,
@@ -86,13 +100,20 @@ function render(): void {
 
   // The instance method. The package README shows `gantt.tasks.refresh()`,
   // which does not exist — following it means the chart silently never updates.
+  // A fixed height does not follow the task count on its own. `refresh` reads
+  // the option for the grid, but the container's CSS height is only set when
+  // options are first read, so that is set here too. (`update_options` would
+  // do both, at the cost of drawing everything twice.)
+  const height = chartHeight(props.tasks.length)
+  gantt.value.options.container_height = height
+  el.querySelector<HTMLElement>('.gantt-container')?.style.setProperty('--gv-grid-height', `${height}px`)
   gantt.value.refresh(frappeTasks)
   decorate()
 }
 
 /** Everything the library knows nothing about, reapplied after each render. */
 function decorate(): void {
-  applyWarningTooltips()
+  applyLabels()
   applySelection()
   rerouteArrows()
 }
@@ -127,25 +148,37 @@ function applySelection(): void {
 }
 
 /**
- * Give warned bars a native tooltip. The library renders each bar group with
- * `data-id`, and an SVG `<title>` child is the tooltip mechanism inside an
- * SVG — there is no popup to hang it off, since popups are disabled so that a
- * click selects the task for the detail panel.
+ * Keep every label inside its bar, cut short with "…" where it does not fit,
+ * and give every bar a native tooltip with the full name, plus any warnings.
+ * An SVG `<title>` child is the tooltip mechanism inside an SVG; there is no
+ * popup to hang it off, since popups are disabled so that a click selects the
+ * task for the detail panel.
+ *
+ * Runs straight after frappe draws, before its own `requestAnimationFrame`
+ * placement: that sees a label that fits and centres it in the bar, rather
+ * than moving an over-long one out past the bar's end.
  */
-function applyWarningTooltips(): void {
+function applyLabels(): void {
   const el = container.value
   if (!el) return
 
   for (const task of props.tasks) {
-    if (task.warnings.length === 0) continue
-
-    const group = el.querySelector(`[data-id="${CSS.escape(task.id)}"]`)
+    const group = el.querySelector(`.bar-wrapper[data-id="${CSS.escape(task.id)}"]`)
     if (!group) continue
+    const name = barName(task)
 
     const existing = group.querySelector(':scope > title')
     const title = existing ?? document.createElementNS('http://www.w3.org/2000/svg', 'title')
-    title.textContent = task.warnings.join(' ')
+    title.textContent = [name, ...task.warnings].join('\n')
     if (!existing) group.prepend(title)
+
+    const label = group.querySelector<SVGTextElement>('.bar-label')
+    const width = Number(group.querySelector('.bar')?.getAttribute('width'))
+    if (!label || !Number.isFinite(width)) continue
+    label.textContent = fitLabel(name, width - 2 * LABEL_INSET, (candidate) => {
+      label.textContent = candidate
+      return label.getComputedTextLength()
+    })
   }
 }
 

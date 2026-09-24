@@ -18,7 +18,7 @@ import { addDays, startOfDay } from 'date-fns'
 
 /**
  * The one place days are counted (ROADMAP.md, "All date arithmetic goes
- * through one calendar"). Bar lengths derived from Effort, the effort check,
+ * through one calendar"). Bar lengths derived from Days, the Days check,
  * and default task lengths all come through here; nothing else adds or counts
  * days on its own.
  *

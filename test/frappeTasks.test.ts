@@ -31,6 +31,12 @@ const task: Task = {
 }
 
 describe('toFrappeTasks', () => {
+  it('escapes markup in the name, which frappe writes with innerHTML', () => {
+    const [mapped] = toFrappeTasks([{ ...task, title: '<img src=x onerror=alert(1)> & more' }])
+
+    expect(mapped.name).toBe('#341 &lt;img src=x onerror=alert(1)&gt; &amp; more')
+  })
+
   it('maps domain field names onto frappe field names', () => {
     const [mapped] = toFrappeTasks([task])
 

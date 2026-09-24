@@ -69,6 +69,8 @@ declare module 'frappe-gantt' {
     constructor(wrapper: string | HTMLElement | SVGElement, tasks: FrappeTask[], options?: FrappeOptions)
     /** The instance method. The README's `gantt.tasks.refresh()` does not exist. */
     refresh(tasks: FrappeTask[]): void
+    /** The live options, read on every render; `refresh` does not reset them. */
+    options: FrappeOptions
     change_view_mode(mode?: string, maintain_pos?: boolean): void
     clear(): void
     tasks: FrappeTask[]

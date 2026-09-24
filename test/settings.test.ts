@@ -45,6 +45,16 @@ describe('settings persistence', () => {
     expect(settings.pageSize).toBe(25)
   })
 
+  it('reads the Days field by default, even where the old Effort setting was stored', () => {
+    // The field was renamed; "Effort" is now a different, single-select field.
+    window.localStorage.setItem(KEY, JSON.stringify({ effortFieldName: 'Effort' }))
+
+    const settings = useSettingsStore()
+
+    expect(settings.daysFieldName).toBe('Days')
+    expect(settings.mapConfig()).not.toHaveProperty('effortFieldName')
+  })
+
   it('ignores stored values of the wrong shape', () => {
     window.localStorage.setItem(
       KEY,

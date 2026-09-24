@@ -192,8 +192,8 @@ describe('resolveDates — the personal-repo case', () => {
   })
 })
 
-describe('resolveDates — Effort', () => {
-  it('gives the End from the Start field plus Effort, ahead of the milestone', () => {
+describe('resolveDates — Days', () => {
+  it('gives the End from the Start field plus Days, ahead of the milestone', () => {
     // Mon 2 Mar, five working days: Mon–Fri 6 Mar.
     const { due, sources } = resolveDates(
       inputs({ fieldStart: '2026-03-02', milestoneDue: '2026-04-30T00:00:00Z', effortDays: 5 }),
@@ -204,7 +204,7 @@ describe('resolveDates — Effort', () => {
     expect(sources.due).toBe('effort')
   })
 
-  it('gives the Start from the End less Effort', () => {
+  it('gives the Start from the End less Days', () => {
     // Thu 30 Apr, three working days: Tue 28, Wed 29, Thu 30.
     const { start, sources } = resolveDates(inputs({ milestoneDue: '2026-04-30T00:00:00Z', effortDays: 3 }), cfg)
 
@@ -212,14 +212,14 @@ describe('resolveDates — Effort', () => {
     expect(sources).toEqual({ start: 'effort', due: 'milestone' })
   })
 
-  it('lets an End field win over Effort', () => {
+  it('lets an End field win over Days', () => {
     const { due, sources } = resolveDates(inputs({ fieldStart: '2026-10-01', fieldDue: '2026-10-30', effortDays: 2 }), cfg)
 
     expect(day(due)).toBe('2026-10-30')
     expect(sources).toEqual({ start: 'field', due: 'field' })
   })
 
-  it('warns, without changing anything, when Start–End is shorter than Effort', () => {
+  it('warns, without changing anything, when Start–End is shorter than Days', () => {
     // Thu 1 – Mon 5 Oct is three working days.
     const { start, due, warnings } = resolveDates(
       inputs({ fieldStart: '2026-10-01', fieldDue: '2026-10-05', effortDays: 5 }),
@@ -228,11 +228,23 @@ describe('resolveDates — Effort', () => {
 
     expect(day(start)).toBe('2026-10-01')
     expect(day(due)).toBe('2026-10-05')
-    expect(warnings).toEqual(['Start–End gives 3 working days; Effort is 5 days.'])
+    expect(warnings).toEqual(['Start–End gives 3 working days; Days is set to 5.'])
   })
 
-  it('does not warn when Start–End exactly fits Effort', () => {
+  it('does not warn when Start–End exactly fits Days', () => {
     const { warnings } = resolveDates(inputs({ fieldStart: '2026-10-01', fieldDue: '2026-10-05', effortDays: 3 }), cfg)
+
+    expect(warnings).toEqual([])
+  })
+
+  it('warns when Start–End is longer than Days, too', () => {
+    const { warnings } = resolveDates(inputs({ fieldStart: '2026-10-01', fieldDue: '2026-10-05', effortDays: 2 }), cfg)
+
+    expect(warnings).toEqual(['Start–End gives 3 working days; Days is set to 2.'])
+  })
+
+  it('counts a part day as the whole day it occupies', () => {
+    const { warnings } = resolveDates(inputs({ fieldStart: '2026-10-01', fieldDue: '2026-10-05', effortDays: 2.5 }), cfg)
 
     expect(warnings).toEqual([])
   })
@@ -247,7 +259,7 @@ describe('resolveDates — Effort', () => {
     expect(warnings).toEqual([])
   })
 
-  it.each([0, -2, Number.NaN, null])('ignores an Effort of %p', (effortDays) => {
+  it.each([0, -2, Number.NaN, null])('ignores a Days of %p', (effortDays) => {
     const { due, sources } = resolveDates(inputs({ fieldStart: '2026-04-01', effortDays }), cfg)
 
     expect(day(due)).toBe('2026-04-01')
