@@ -243,3 +243,32 @@ describe('mapIssue — malformed input', () => {
     expect(Number.isNaN(task.start.getTime())).toBe(false)
   })
 })
+
+describe('mapIssue — milestone and release label', () => {
+  const inMilestone = {
+    ...syntheticNodes[1],
+    milestone: { id: 'MI_1', title: 'v1', dueOn: '2026-04-30T00:00:00Z' },
+    labels: { nodes: [{ name: 'bug' }, { name: 'Release' }] },
+  } as GitHubIssueNode
+
+  it('reads the milestone by id, on the day GitHub’s UTC timestamp names', () => {
+    const { milestone } = mapIssue(inMilestone, cfg)
+
+    expect(milestone?.id).toBe('MI_1')
+    expect(milestone?.title).toBe('v1')
+    expect(day(milestone!.dueOn!)).toBe('2026-04-30')
+  })
+
+  it('marks the release issue by its label, case-insensitively', () => {
+    expect(mapIssue(inMilestone, cfg).isRelease).toBe(true)
+    expect(mapIssue(inMilestone, { ...cfg, releaseLabel: 'ship' }).isRelease).toBe(false)
+    expect(mapIssue(inMilestone, { ...cfg, releaseLabel: ' ' }).isRelease).toBe(false)
+  })
+
+  it('copes with no labels and a milestone without an id', () => {
+    const task = mapIssue(syntheticNodes[1], cfg)
+
+    expect(task.isRelease).toBe(false)
+    expect(task.milestone).toBeNull()
+  })
+})

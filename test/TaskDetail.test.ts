@@ -39,6 +39,8 @@ const task: Task = {
   dateSources: { start: 'field', due: 'field' },
   canSetFields: true,
   warnings: [],
+  milestone: null,
+  isRelease: false,
 }
 
 /** A loaded neighbour, for the board's task list. */
@@ -69,6 +71,14 @@ describe('TaskDetail', () => {
     expect(text).toContain('54 working days')
     expect(text).toContain('M')
     wrapper.unmount()
+  })
+
+  it('shows the milestone, and says a release issue is drawn as its diamond', () => {
+    const milestone = { id: 'M1', title: 'v1.0', dueOn: new Date(2026, 9, 9) }
+
+    expect(mountDetail({ milestone }).text()).toContain('v1.0 (due Fri 9 Oct 2026)')
+    expect(mountDetail({ milestone, isRelease: true }).text()).toContain('Release issue: drawn as the milestone’s diamond.')
+    expect(mountDetail().text()).not.toContain('Milestone')
   })
 
   it('shows a dash when there is no effort', () => {

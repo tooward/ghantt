@@ -74,6 +74,18 @@ Clicking a bar selects it and shows its start, end, Days and blockers in a panel
 
 Field names, the default task length and the page size are all editable in the app's Settings window (the gear icon in the header) and are remembered in local storage. Dates that cannot be parsed are ignored and reported on the bar rather than guessed at; a due date falling before its start is corrected and flagged.
 
+## Milestones and releases
+
+Open milestones with a due date are drawn as **diamonds** on that date, with no length. An empty milestone (none of its issues loaded, no release issue) is shown only while its date is today or later, so a forgotten old one does not stretch the chart. Each milestone's issues are grouped together above its diamond, and its last issues — those nothing else in the milestone waits on — have arrows into it. Hovering over a diamond shows its due date and how many of its issues are closed (of every type, not only what is charted).
+
+A milestone itself cannot block anything in GitHub, so to make later work wait on a release:
+
+1. Create a milestone, e.g. `v1.0`, with a due date.
+2. Create an issue such as "Release v1.0", give it the label **`release`** (the label name is configurable in Settings) and put it in the `v1.0` milestone. This issue becomes the milestone's diamond.
+3. Mark post-release work as **blocked by** the release issue. Its arrows then leave from the diamond.
+
+The chart warns — never blocks — when an issue ends after its milestone, when work waiting on a release is set to start on or before the release day, when a release issue's End differs from the milestone's due date, or when a milestone has more than one release issue. Only dates someone set count: an End taken from the milestone is never "late". A diamond with no release issue opens a small panel with a link to the milestone; a release issue opens the usual panel.
+
 ## Dependencies
 
 An issue's `blocked by` links become finish-to-start arrows: from the right end of the blocker to the start of the blocked issue. When the blocked issue starts before its blocker ends, the arrow runs back along the gap between the rows so it still points into the start.

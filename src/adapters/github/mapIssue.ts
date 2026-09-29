@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-import { resolveDates } from '../../domain/dateResolution'
-import type { LinkedIssue, Task } from '../../domain/Task'
+import { milestoneDay, resolveDates } from '../../domain/dateResolution'
+import type { LinkedIssue, MilestoneRef, Task } from '../../domain/Task'
 import type { GitHubIssueNode, GitHubIssueRef } from './types'
 
 export interface MapConfig {
@@ -28,6 +28,8 @@ export interface MapConfig {
    */
   daysFieldName: string
   defaultTaskDays: number
+  /** Label marking a milestone's release issue, matched case-insensitively. */
+  releaseLabel: string
 }
 
 export const DEFAULT_MAP_CONFIG: MapConfig = {
@@ -35,6 +37,7 @@ export const DEFAULT_MAP_CONFIG: MapConfig = {
   dueFieldName: 'End',
   daysFieldName: 'Days',
   defaultTaskDays: 1,
+  releaseLabel: 'release',
 }
 
 /**
@@ -76,7 +79,22 @@ export function mapIssue(node: GitHubIssueNode, cfg: MapConfig): Task {
     dateSources: sources,
     canSetFields: node.viewerCanSetFields === true,
     warnings,
+    milestone: milestoneRef(node),
+    isRelease: hasLabel(node, cfg.releaseLabel),
   }
+}
+
+function milestoneRef(node: GitHubIssueNode): MilestoneRef | null {
+  const milestone = node.milestone
+  // Grouping needs the id; a milestone without one (old fixtures) is not grouped.
+  if (!milestone?.id) return null
+  return { id: milestone.id, title: milestone.title ?? '', dueOn: milestoneDay(milestone.dueOn) }
+}
+
+function hasLabel(node: GitHubIssueNode, name: string): boolean {
+  const wanted = name.trim().toLowerCase()
+  if (!wanted) return false
+  return (node.labels?.nodes ?? []).some((label) => label?.name.trim().toLowerCase() === wanted)
 }
 
 function linkedIssue(ref: GitHubIssueRef, node: GitHubIssueNode): LinkedIssue {

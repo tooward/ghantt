@@ -31,9 +31,12 @@ import type { Task } from '../../domain/Task'
  * midnight, so `toISOString()` would report the previous day east of UTC.
  */
 export const WARNED_BAR_CLASS = 'gh-gantt-warned'
+/** Rows drawn as a diamond. frappe adds `custom_class` with `classList.add`, so it must be one class. */
+export const MILESTONE_CLASS = 'gh-gantt-milestone'
 
-/** The text on a bar and in its tooltip. */
+/** The text on a bar and in its tooltip. A milestone's diamond is named after the milestone. */
 export function barName(task: Task): string {
+  if (task.marker?.milestone) return task.marker.milestone.title
   return `#${task.number} ${task.title}`
 }
 
@@ -55,6 +58,9 @@ export function toFrappeTasks(tasks: Task[]): FrappeTask[] {
     progress: 0,
     dependencies: [...task.dependsOn],
     // Marks the bar so warned tasks can be picked out visually.
-    ...(task.warnings.length > 0 ? { custom_class: WARNED_BAR_CLASS } : {}),
+    // A diamond's warnings are marked by the chart itself: one class only here.
+    ...(task.marker
+      ? { custom_class: MILESTONE_CLASS }
+      : task.warnings.length > 0 ? { custom_class: WARNED_BAR_CLASS } : {}),
   }))
 }

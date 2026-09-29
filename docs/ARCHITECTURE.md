@@ -166,7 +166,7 @@ CORS was verified by preflight: `api.github.com/graphql` returns `access-control
 
 ### 5.2 The query
 
-This query is **verified working** — it was executed successfully against a live repository (last re-run 2026-09-23, after adding Effort, blocker details and dropping `body`). Use it as-is.
+This query is **verified working** — it was executed successfully against a live repository (last re-run 2026-09-24, after adding the milestone id and labels). Use it as-is.
 
 ```graphql
 query BoardIssues($owner: String!, $repo: String!, $first: Int!, $after: String, $type: String) {
@@ -193,7 +193,8 @@ fragment BoardIssue on Issue {
   createdAt
   repository { nameWithOwner }
   viewerCanSetFields
-  milestone { title dueOn }
+  milestone { id title dueOn }
+  labels(first: 20) { nodes { name } }
   issueFieldValues(first: 20) {
     nodes {
       __typename
@@ -220,7 +221,7 @@ fragment BoardIssue on Issue {
 }
 ```
 
-The fragment lives in `queries/boardIssue.fragment.graphql` and is appended to both the board query and the `SetIssueFields` mutation, so an issue returned by a save maps exactly like one loaded by the board. The `AddBlockedBy` / `RemoveBlockedBy` mutations use it too, for both `issue` and `blockingIssue`, as does `RepoIssue` (one issue by number, for linking an issue that is not loaded; a PR number answers NOT_FOUND "Could not resolve to an Issue"). The repository's date-field ids come from a separate `RepoFields` query (`repository.issueFields`, with each field's kind), so a failure there turns editing off rather than breaking the chart.
+The fragment lives in `queries/boardIssue.fragment.graphql` and is appended to both the board query and the `SetIssueFields` mutation, so an issue returned by a save maps exactly like one loaded by the board. The `AddBlockedBy` / `RemoveBlockedBy` mutations use it too, for both `issue` and `blockingIssue`, as does `RepoIssue` (one issue by number, for linking an issue that is not loaded; a PR number answers NOT_FOUND "Could not resolve to an Issue"). The repository's date-field ids come from a separate `RepoFields` query (`repository.issueFields`, with each field's kind), so a failure there turns editing off rather than breaking the chart. Likewise the open milestones come from a separate `RepoMilestones` query (`repository.milestones(states: OPEN)`, with `url`, `openIssueCount` and `closedIssueCount`), run beside the first page and again on refresh; a failure there only leaves the diamonds out.
 
 Schema facts confirmed by introspection on 2026-09-17:
 
@@ -229,7 +230,7 @@ Schema facts confirmed by introspection on 2026-09-17:
 - `IssueFieldValue` is a **union**: `IssueFieldDateValue | IssueFieldTextValue | IssueFieldNumberValue | IssueFieldSingleSelectValue | IssueFieldMultiSelectValue`
 - `IssueFieldDateValue` has `{ field: IssueFields, id: ID, value: String }` — note `value` is a **String**, not a Date
 - `IssueFields` is a **union**: `IssueFieldDate | IssueFieldText | IssueFieldNumber | IssueFieldSingleSelect | IssueFieldMultiSelect`
-- `Milestone.dueOn` (camelCase — the REST API calls it `due_on`)
+- `Milestone.dueOn` (camelCase — the REST API calls it `due_on`). It is a UTC timestamp, normally midnight (`2019-11-13T00:00:00Z`, checked 2026-09-24), for what is a date. `milestoneDay` takes its UTC calendar day: read in local time it fell on the previous day anywhere west of UTC, which moved milestone-derived End dates a day early until 2026-09-24.
 - `IssueFieldNumberValue.value` is a non-null **Float** and `IssueFieldSingleSelectValue` carries the chosen option as `name` (plus `value`, `color`, `optionId`). GraphQL rejects one response key with different types across fragments, so the query aliases them to `numberValue` and `optionName`. (Re-checked 2026-09-23.)
 - `IssueFilters` (the `issues(filterBy:)` argument) accepts `type`, `labels`, `milestone` and `issueFieldValues`. An `IssueFieldValueFilter` matches a date field by **exact** `dateValue` only — there is no range filter. (Re-checked 2026-09-23.)
 - Write mutations exist for later: `setIssueFieldValue`, `addBlockedBy`, `removeBlockedBy`. (Re-checked 2026-09-23.)
@@ -274,6 +275,21 @@ Three problems the implementer must handle explicitly:
 1. **Dangling edges.** `blockedBy` can reference issues that are closed, in another repository, or simply not in the loaded page. An edge whose target is not in the current task set **must be dropped** before handing data to `frappe-gantt`, which will otherwise misrender or throw. This is the single most likely source of bugs in this feature.
 2. **Cycles.** GitHub does not guarantee an acyclic dependency graph. Run cycle detection (DFS with a colour marking) in `TaskGraph.ts`. On detecting a cycle, drop the edge that closes it and surface a non-fatal warning. Never recurse without a visited set.
 3. **Fan-out cap.** The query requests `blockedBy(first: 50)`. GitHub's own limit is 50 per relationship type, so this is complete — but do not raise the number and assume more.
+
+### 5.5 Milestones and release issues
+
+A GitHub milestone cannot block or be blocked: `addBlockedBy` takes two issue ids. So a milestone is drawn as a diamond, and the thing that blocks later work is a **release issue** — an issue in the milestone carrying the release label (default `release`, configurable, matched case-insensitively). The label, rather than an issue type, was chosen on 2026-09-24 because it needs no organisation admin and the issue still passes a Feature filter.
+
+`domain/timeline.ts` (`buildTimeline`) turns the graph's tasks and the repository's open milestones into the chart's rows. It is pure and copies what it changes.
+
+- **Grouping.** Each milestone's issues are grouped, by start date, and the diamond row closes the group. Groups run by due date, undated ones after, then issues in no milestone in their original order — a repository without milestones charts exactly as before.
+- **The diamond** is the release issue's own row, keeping its id, so its blocked-by links still attach. A dated milestone with no release issue gets a stand-in row (`milestone:<id>`), which is no issue: it has a small panel with a link, not the task panel. An open milestone with a due date is shown even when none of its issues is loaded — unless its date is past, since a forgotten overdue milestone would stretch the chart's range back to it. A milestone with no due date gets no diamond unless it has a release issue, which is then drawn on its own End.
+- **Date.** The diamond sits on the milestone's due date, never moved by its issues. A release issue's End field that disagrees is warned about.
+- **Roll-up.** Arrows run into the diamond from the milestone's last issues — those no other issue in it waits on. Work downstream of the release is left out even when it is in the same milestone, since that would close a loop (release → X → release).
+- **Warnings**, from chosen dates only (a field, or Days — never a date taken from the milestone itself or the creation date): an issue that ends after its milestone (on the issue and, summarised, on the diamond); work waiting on a release whose Start field is on or before the release day; more than one release issue in a milestone. The general "starts before its blocker ends" check exists only for releases.
+- **Cycles.** Roll-ups in two milestones can close a loop between their release issues (release A waits on a last issue of B, which waits on release B, which rolls up an issue waiting on A), so the store runs the timeline through `detectAndBreakCycles` again before charting it.
+- **Rendering.** frappe draws a one-day bar for each diamond row, hidden but kept as the click target; the chart draws the diamond (centred on the end of the day) and its name beside it with `textContent`. Arrows into a diamond use `intoDiamondPath` (into its top or bottom point); arrows out of it leave from its right point.
+- **Limits.** One repository only, as milestones are per repository. Release issues come from the normal page load, so one on a later page is not a diamond until it is paged in. A milestone's issue counts cover every issue type, not only what is charted.
 
 ---
 

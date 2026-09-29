@@ -1,0 +1,11 @@
+# A repository's open milestones, for the chart's diamonds. Separate from the
+# board query on purpose: if this fails, the diamonds are missing, not the
+# chart. The issue counts cover every issue in the milestone, of every type.
+query RepoMilestones($owner: String!, $repo: String!) {
+  repository(owner: $owner, name: $repo) {
+    milestones(first: 50, states: OPEN, orderBy: {field: DUE_DATE, direction: ASC}) {
+      nodes { id title dueOn url openIssueCount closedIssueCount }
+    }
+  }
+  rateLimit { cost limit remaining resetAt }
+}

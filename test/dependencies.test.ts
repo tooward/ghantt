@@ -38,6 +38,8 @@ function task(id: TaskId, dependsOn: TaskId[] = [], warnings: string[] = []): Ta
     dateSources: { start: 'field', due: 'field' },
     canSetFields: true,
     warnings,
+    milestone: null,
+    isRelease: false,
   }
 }
 

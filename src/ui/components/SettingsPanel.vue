@@ -94,6 +94,16 @@ function onDialogClick(event: MouseEvent) {
       </div>
 
       <div>
+        <label for="release-label" class="block text-sm font-medium">Release label</label>
+        <input
+          id="release-label"
+          v-model="settings.releaseLabel"
+          class="mt-1 w-full rounded border border-gray-300 px-3 py-2"
+        >
+        <p class="mt-1 text-xs text-gray-500">The issue with this label in a milestone is drawn as its diamond, and can block later work.</p>
+      </div>
+
+      <div>
         <label for="default-days" class="block text-sm font-medium">Default task length (working days)</label>
         <input
           id="default-days"

@@ -14,7 +14,8 @@
  * limitations under the License.
  */
 
-import type { Task, TaskId } from '../../domain/Task'
+import { milestoneDay } from '../../domain/dateResolution'
+import type { Milestone, Task, TaskId } from '../../domain/Task'
 import type { IssuePage, IssueSource, RepoRef } from '../../ports/IssueSource'
 import type { FieldKind, FieldValue, IssueFieldRef, IssueWriter } from '../../ports/IssueWriter'
 import addBlockedByDocument from './queries/addBlockedBy.graphql?raw'
@@ -23,6 +24,7 @@ import boardIssuesDocument from './queries/boardIssues.graphql?raw'
 import removeBlockedByDocument from './queries/removeBlockedBy.graphql?raw'
 import repoFieldsQuery from './queries/repoFields.graphql?raw'
 import repoIssueDocument from './queries/repoIssue.graphql?raw'
+import repoMilestonesQuery from './queries/repoMilestones.graphql?raw'
 import setIssueFieldsDocument from './queries/setIssueFields.graphql?raw'
 import { GitHubClient, GitHubError, type RateLimitInfo } from './GitHubClient'
 import { mapIssue, type MapConfig } from './mapIssue'
@@ -31,6 +33,7 @@ import type {
   BoardIssuesResponse,
   RepoFieldsResponse,
   RepoIssueResponse,
+  RepoMilestonesResponse,
   SetIssueFieldsResponse,
 } from './types'
 
@@ -107,6 +110,26 @@ export class GitHubIssueSource implements IssueSource, IssueWriter {
     // the client has already thrown; this covers a bare null.
     if (!issue) throw new GitHubError(`Could not resolve to an Issue with the number of ${number}.`)
     return mapIssue(issue, this.config())
+  }
+
+  async fetchMilestones(repo: RepoRef): Promise<Milestone[]> {
+    const result = await this.client.query<RepoMilestonesResponse>(repoMilestonesQuery, {
+      owner: repo.owner,
+      repo: repo.name,
+    })
+    this.lastRateLimit = result.rateLimit ?? this.lastRateLimit
+    return (result.data.repository?.milestones?.nodes ?? []).flatMap((node) =>
+      node
+        ? [{
+            id: node.id,
+            title: node.title,
+            dueOn: milestoneDay(node.dueOn),
+            url: node.url,
+            openIssueCount: node.openIssueCount,
+            closedIssueCount: node.closedIssueCount,
+          }]
+        : [],
+    )
   }
 
   async fields(repo: RepoRef): Promise<IssueFieldRef[]> {

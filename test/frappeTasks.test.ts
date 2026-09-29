@@ -16,7 +16,7 @@
 
 import { describe, expect, it } from 'vitest'
 import type { Task } from '../src/domain/Task'
-import { toFrappeTasks } from '../src/ui/components/frappeTasks'
+import { MILESTONE_CLASS, toFrappeTasks, WARNED_BAR_CLASS } from '../src/ui/components/frappeTasks'
 
 const task: Task = {
   id: 'I_kwDOA_jtLc5upYqd',
@@ -79,5 +79,17 @@ describe('toFrappeTasks', () => {
 
   it('handles an empty list', () => {
     expect(toFrappeTasks([])).toEqual([])
+  })
+
+  it('names a diamond after its milestone, escaped, and gives it the one milestone class', () => {
+    const milestone = { id: 'M1', title: 'v1 <beta>', dueOn: new Date(2026, 0, 9) }
+    const [mapped] = toFrappeTasks([
+      { ...task, warnings: ['late'], marker: { milestone, date: new Date(2026, 0, 9), synthetic: true } } as Task,
+    ])
+
+    expect(mapped.name).toBe('v1 &lt;beta&gt;')
+    // frappe adds custom_class with classList.add: two classes in one string would throw.
+    expect(mapped.custom_class).toBe(MILESTONE_CLASS)
+    expect(mapped.custom_class).not.toContain(WARNED_BAR_CLASS)
   })
 })

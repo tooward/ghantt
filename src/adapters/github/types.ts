@@ -38,8 +38,19 @@ export interface GitHubIssueFieldValueNode {
 }
 
 export interface GitHubMilestone {
+  id?: string | null
   title: string | null
+  /** A UTC timestamp, normally midnight, for a date-only due date. */
   dueOn: string | null
+}
+
+export interface GitHubRepoMilestone {
+  id: string
+  title: string
+  dueOn: string | null
+  url: string
+  openIssueCount: number
+  closedIssueCount: number
 }
 
 export interface GitHubIssueRef {
@@ -63,6 +74,8 @@ export interface GitHubIssueNode {
    */
   viewerCanSetFields?: boolean | null
   milestone: GitHubMilestone | null
+  /** Absent in fixtures captured before labels were queried. */
+  labels?: { nodes: ({ name: string } | null)[] | null } | null
   /** Empty on personal-account repositories: issue fields are organisation-level. */
   issueFieldValues: { nodes: GitHubIssueFieldValueNode[] | null } | null
   blockedBy: { nodes: GitHubIssueRef[] | null } | null
@@ -103,6 +116,10 @@ export interface SetIssueFieldsResponse {
 export interface BlockedByResponse {
   addBlockedBy?: { issue: GitHubIssueNode | null; blockingIssue: GitHubIssueNode | null } | null
   removeBlockedBy?: { issue: GitHubIssueNode | null; blockingIssue: GitHubIssueNode | null } | null
+}
+
+export interface RepoMilestonesResponse {
+  repository: { milestones: { nodes: (GitHubRepoMilestone | null)[] | null } | null } | null
 }
 
 export interface RepoIssueResponse {
