@@ -24,7 +24,17 @@ npm run build    # production build into dist/
 npm run preview  # serve the production build
 ```
 
-The build output in `dist/` is plain static files and can be served from any static host. Nothing is deployed yet and `base` is `'/'`, which suits a domain root; if you serve from a subpath — GitHub Pages at `<user>.github.io/gh-gantt/`, say — set [`base`](https://vite.dev/config/shared-options.html#base) in `vite.config.ts` to match before building.
+The build output in `dist/` is plain static files — the app (`index.html`) and its help page (`help.html`) — and can be served from any static host. `base` is `'/'`, which suits a domain root; if you serve from a subpath, set [`base`](https://vite.dev/config/shared-options.html#base) in `vite.config.ts` to match before building.
+
+## Deploying (Cloudflare Pages)
+
+1. In the Cloudflare dashboard, go to **Workers & Pages → Create → Pages → Connect to Git**, and pick this repository.
+2. Framework preset **None** (or Vite), build command `npm run build`, build output directory `dist`. Node comes from `.nvmrc`. No environment variables or secrets are needed.
+3. Deploy. The site is served at `https://<project>.pages.dev`; every push to `main` redeploys, and each pull request gets a preview URL.
+
+`public/_headers` sets a strict Content-Security-Policy — scripts only from the site itself, network calls only to `api.github.com`, images only from the site and GitHub avatars — plus related headers, since the page holds a GitHub token. A remembered token belongs to the site's address, so moving to a custom domain later means everyone connects again; preview URLs are separate addresses too.
+
+User-facing help is in `help.html`, linked from the **?** in the toolbar and from the connect page.
 
 ## Creating a token
 

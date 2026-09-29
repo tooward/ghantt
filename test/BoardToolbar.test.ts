@@ -99,6 +99,16 @@ describe('BoardToolbar', () => {
     wrapper.unmount()
   })
 
+  it('links to the help page in a new tab', () => {
+    const { wrapper } = mountToolbar()
+    const help = wrapper.get('a[aria-label^="Help"]')
+
+    expect(help.attributes('href')).toBe('/help.html')
+    expect(help.attributes('target')).toBe('_blank')
+    expect(help.text()).toBe('?')
+    wrapper.unmount()
+  })
+
   it('toggles from the button', async () => {
     window.localStorage.setItem(KEY, JSON.stringify({ lastOwner: 'acme', lastRepo: 'widgets' }))
     const { wrapper } = mountToolbar()

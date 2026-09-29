@@ -1,0 +1,15 @@
+# Cloudflare Pages response headers (https://developers.cloudflare.com/pages/configuration/headers/).
+# The page holds a GitHub token, so it may only run its own scripts and only
+# talk to GitHub's API: a title that slipped past escaping could not load a
+# script from elsewhere or send the token anywhere. Styles allow inline
+# values because Vue and frappe-gantt set element styles at run time.
+/*
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https://avatars.githubusercontent.com; connect-src https://api.github.com; font-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  Cross-Origin-Opener-Policy: same-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
+
+# Built assets carry a content hash in their names, so they never change.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable

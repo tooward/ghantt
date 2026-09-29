@@ -1,0 +1,14 @@
+@reference "./style.css";
+
+/* Prose for the help page, which is written as plain HTML. */
+.help h2 { @apply mt-10 scroll-mt-6 border-b border-gray-200 pb-2 text-xl font-semibold text-gray-900; }
+.help h3 { @apply mt-6 font-semibold text-gray-900; }
+.help p { @apply mt-3 leading-7 text-gray-700; }
+.help ul, .help ol { @apply mt-3 space-y-2 pl-6 leading-7 text-gray-700; }
+.help ul { @apply list-disc; }
+.help ol { @apply list-decimal; }
+.help a { @apply underline decoration-gray-400 hover:decoration-gray-900; }
+.help code { @apply rounded bg-gray-100 px-1 text-sm; }
+.help strong { @apply font-semibold text-gray-900; }
+.help .note { @apply mt-4 rounded border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-900; }
+.help .tip { @apply mt-4 rounded border border-gray-200 bg-gray-50 p-3 text-sm leading-6 text-gray-700; }
