@@ -22,6 +22,7 @@ import ChartSkeleton from '../components/ChartSkeleton.vue'
 import ErrorBanner from '../components/ErrorBanner.vue'
 import GanttChart from '../components/GanttChart.vue'
 import GraphNotice from '../components/GraphNotice.vue'
+import MilestoneDetail from '../components/MilestoneDetail.vue'
 import TaskDetail from '../components/TaskDetail.vue'
 import type { TaskId } from '../../domain/Task'
 
@@ -40,12 +41,20 @@ function findIssue(text: string) {
   return named && { label: named.label, run: () => board.lookupIssue(named.ref) }
 }
 
-// A reload or a different repository can take the selected task away.
-watch(selectedTask, (task) => {
-  if (!task) selectedId.value = null
+/** A stand-in milestone diamond: no issue behind it, so it has its own small panel. */
+const selectedMilestone = computed(() =>
+  board.timeline.find((row) => row.id === selectedId.value && row.marker?.synthetic) ?? null,
+)
+
+// A reload or a different repository can take the selection away.
+watch([selectedTask, selectedMilestone], ([task, milestone]) => {
+  if (!task && !milestone) selectedId.value = null
 })
 
-const warnedTasks = computed(() => board.graph.tasks.filter((task) => task.warnings.length > 0).length)
+// From the timeline, which adds milestone warnings; stand-in diamonds are not issues.
+const warnedTasks = computed(
+  () => board.timeline.filter((row) => !row.marker?.synthetic && row.warnings.length > 0).length,
+)
 /** "Feature issues" or "issues", for the counts and the empty state. */
 const loadedType = computed(() => board.repo?.issueType ?? null)
 const issueNoun = computed(() => (loadedType.value ? `${loadedType.value} issues` : 'issues'))
@@ -81,28 +90,41 @@ const isFirstLoad = computed(() => board.loading && board.tasks.length === 0)
 
       <div class="relative mt-3">
         <GanttChart
-          :tasks="board.graph.tasks"
+          :tasks="board.timeline"
           :view-mode="settings.viewMode"
           :selected-id="selectedId"
           @select="selectedId = $event"
         />
-        <!-- Outside the chart's scroll container so it stays put, and just
-             below the date header so the dates stay readable. -->
-        <!-- Keyed by task, so choosing another bar starts a fresh form. -->
-        <TaskDetail
-          v-if="selectedTask"
-          :key="selectedTask.id"
-          class="absolute right-3 top-24 z-10"
-          :task="selectedTask"
-          :tasks="board.tasks"
-          :editability="board.fieldEditability"
-          :save="(changes) => board.saveFields(selectedTask!.id, changes)"
-          :link="board.linkBlocker"
-          :unlink="board.unlinkBlocker"
-          :find-issue="findIssue"
-          @close="selectedId = null"
-          @select="selectedId = $event"
-        />
+        <!-- Outside the chart's scroll container so it stays put. The column
+             runs the chart's full height, below the date header, and the panel
+             sticks to the top of the window inside it, so it opens in view
+             however far down the page the clicked bar is. Only the panel
+             takes clicks; the rest of the column lets them through to the chart.
+             A panel taller than the window scrolls on its own. -->
+        <div class="pointer-events-none absolute inset-x-3 bottom-0 top-24 z-10 flex items-start justify-end">
+          <!-- Keyed by task, so choosing another bar starts a fresh form. -->
+          <TaskDetail
+            v-if="selectedTask"
+            :key="selectedTask.id"
+            class="pointer-events-auto sticky top-3 max-h-[calc(100vh-1.5rem)] overflow-y-auto"
+            :task="selectedTask"
+            :tasks="board.tasks"
+            :editability="board.fieldEditability"
+            :save="(changes) => board.saveFields(selectedTask!.id, changes)"
+            :link="board.linkBlocker"
+            :unlink="board.unlinkBlocker"
+            :find-issue="findIssue"
+            @close="selectedId = null"
+            @select="selectedId = $event"
+          />
+          <MilestoneDetail
+            v-else-if="selectedMilestone"
+            :key="selectedMilestone.id"
+            class="pointer-events-auto sticky top-3 max-h-[calc(100vh-1.5rem)] overflow-y-auto"
+            :row="selectedMilestone"
+            @close="selectedId = null"
+          />
+        </div>
       </div>
 
       <button

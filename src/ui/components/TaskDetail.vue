@@ -439,6 +439,16 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
             {{ task.effortDays !== null ? formatDays(task.effortDays) : (task.effort ?? '—') }}
           </span>
         </dd>
+        <template v-if="task.milestone || task.isRelease">
+          <dt class="text-gray-500">Milestone</dt>
+          <dd>
+            {{ task.milestone?.title ?? '—' }}
+            <span v-if="task.milestone?.dueOn" class="text-xs text-gray-500">(due {{ formatDay(task.milestone.dueOn) }})</span>
+            <span v-if="task.isRelease" class="block text-xs text-gray-500">
+              Release issue: drawn as {{ task.milestone ? 'the milestone’s' : 'a' }} diamond.
+            </span>
+          </dd>
+        </template>
       </dl>
 
       <p v-if="autoFilled !== null && !isDirty" role="status" class="mt-2 text-xs text-green-700">

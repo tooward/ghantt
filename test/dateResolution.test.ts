@@ -16,7 +16,7 @@
 
 import { format } from 'date-fns'
 import { describe, expect, it } from 'vitest'
-import { resolveDates, type DateInputs } from '../src/domain/dateResolution'
+import { milestoneDay, resolveDates, type DateInputs } from '../src/domain/dateResolution'
 
 const cfg = { defaultTaskDays: 1 }
 
@@ -264,5 +264,21 @@ describe('resolveDates — Days', () => {
 
     expect(day(due)).toBe('2026-04-01')
     expect(sources.due).toBe('default')
+  })
+})
+
+describe('milestoneDay', () => {
+  // GitHub sends a due date as UTC midnight. Local time would put it on the
+  // previous evening west of UTC; this must hold in every time zone.
+  it.each([
+    ['2026-10-09T00:00:00Z', [2026, 9, 9]],
+    ['2017-09-30T07:00:00Z', [2017, 8, 30]],
+    ['2026-10-09', [2026, 9, 9]],
+  ])('reads %s as its calendar day', (value, [y, m, dd]) => {
+    expect(milestoneDay(value)).toEqual(new Date(y, m, dd))
+  })
+
+  it.each([null, '', 'soon'])('is null for %p', (value) => {
+    expect(milestoneDay(value)).toBeNull()
   })
 })

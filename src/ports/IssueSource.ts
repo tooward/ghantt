@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import type { Task } from '../domain/Task'
+import type { Milestone, Task } from '../domain/Task'
 
 export interface IssuePage {
   tasks: Task[]
@@ -46,4 +46,6 @@ export interface IssueSource {
    * Optional: a source without it simply cannot offer that.
    */
   fetchIssue?(repo: RepoRef, number: number): Promise<Task>
+  /** The repository's open milestones. Optional: without it, the chart has no diamonds. */
+  fetchMilestones?(repo: RepoRef): Promise<Milestone[]>
 }

@@ -55,6 +55,16 @@ describe('settings persistence', () => {
     expect(settings.mapConfig()).not.toHaveProperty('effortFieldName')
   })
 
+  it('uses the release label “release” by default, and keeps a stored one', () => {
+    expect(useSettingsStore().releaseLabel).toBe('release')
+
+    window.localStorage.setItem(KEY, JSON.stringify({ releaseLabel: 'ship-it' }))
+    setActivePinia(createPinia())
+    const settings = useSettingsStore()
+    expect(settings.releaseLabel).toBe('ship-it')
+    expect(settings.mapConfig().releaseLabel).toBe('ship-it')
+  })
+
   it('ignores stored values of the wrong shape', () => {
     window.localStorage.setItem(
       KEY,

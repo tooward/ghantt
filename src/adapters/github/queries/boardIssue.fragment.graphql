@@ -8,7 +8,8 @@ fragment BoardIssue on Issue {
   createdAt
   repository { nameWithOwner }
   viewerCanSetFields
-  milestone { title dueOn }
+  milestone { id title dueOn }
+  labels(first: 20) { nodes { name } }
   issueFieldValues(first: 20) {
     nodes {
       __typename

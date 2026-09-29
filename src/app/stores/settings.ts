@@ -45,7 +45,7 @@ const VIEW_MODES: ViewMode[] = ['Day', 'Week', 'Month']
 /** Stored settings are user-editable text; take only what is the right shape. */
 function sanitise(stored: Partial<Settings>): Partial<Settings> {
   const clean: Partial<Settings> = {}
-  for (const key of ['startFieldName', 'dueFieldName', 'daysFieldName', 'lastOwner', 'lastRepo', 'issueType'] as const) {
+  for (const key of ['startFieldName', 'dueFieldName', 'daysFieldName', 'releaseLabel', 'lastOwner', 'lastRepo', 'issueType'] as const) {
     if (typeof stored[key] === 'string') clean[key] = stored[key]
   }
   if (typeof stored.defaultTaskDays === 'number' && stored.defaultTaskDays > 0) {
@@ -75,6 +75,7 @@ export const useSettingsStore = defineStore('settings', () => {
       dueFieldName: settings.dueFieldName,
       daysFieldName: settings.daysFieldName,
       defaultTaskDays: settings.defaultTaskDays,
+      releaseLabel: settings.releaseLabel,
     }
   }
 

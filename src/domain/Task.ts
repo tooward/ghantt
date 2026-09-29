@@ -33,6 +33,40 @@ export interface LinkedIssue {
   repository: string | null
 }
 
+/** The milestone an issue belongs to, as the issue reports it. */
+export interface MilestoneRef {
+  id: string
+  title: string
+  /** The due day, local midnight; null when the milestone has no due date. */
+  dueOn: Date | null
+}
+
+/** A repository milestone, with what the chart shows about it. */
+export interface Milestone extends MilestoneRef {
+  url: string
+  /** Counts over every issue in the milestone, of every type, not only what is charted. */
+  openIssueCount: number
+  closedIssueCount: number
+}
+
+/** A milestone from the repository's list, with its link and counts, rather than an issue's reference to one. */
+export function isRepoMilestone(milestone: Milestone | MilestoneRef | null | undefined): milestone is Milestone {
+  return !!milestone && 'openIssueCount' in milestone
+}
+
+/**
+ * Set only on chart rows that are drawn as a milestone diamond: either the
+ * release issue of a milestone, or a stand-in for a milestone that has none.
+ */
+export interface Marker {
+  /** The milestone this diamond stands for; null for a release issue in none. */
+  milestone: Milestone | MilestoneRef | null
+  /** The diamond's day. */
+  date: Date
+  /** True for a stand-in row, which is no issue and has no panel of its own. */
+  synthetic: boolean
+}
+
 /**
  * A single bar on the chart. Dates are always valid — `resolveDates` guarantees
  * it — so nothing downstream has to defend against `Invalid Date`.
@@ -66,4 +100,9 @@ export interface Task {
   canSetFields: boolean
   /** Non-fatal problems found while building this task, shown in the UI. */
   warnings: string[]
+  milestone: MilestoneRef | null
+  /** Carries the release label: drawn as its milestone's diamond. */
+  isRelease: boolean
+  /** Only on rows built for the chart by `buildTimeline`; see `Marker`. */
+  marker?: Marker
 }

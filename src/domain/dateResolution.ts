@@ -91,7 +91,7 @@ export function resolveDates(i: DateInputs, cfg: DateResolutionConfig): Resolved
 
   const fieldStart = parseOrWarn(i.fieldStart, 'start date field', warnings)
   const fieldDue = parseOrWarn(i.fieldDue, 'due date field', warnings)
-  const milestoneDue = parseOrWarn(i.milestoneDue, 'milestone due date', warnings)
+  const milestoneDue = parseDayOrWarn(i.milestoneDue, 'milestone due date', warnings)
   const createdAt = parseOrWarn(i.createdAt, 'issue creation date', warnings)
 
   // The due candidate is resolved first because the start chain backs off from it.
@@ -169,6 +169,29 @@ function parseOrWarn(value: string | null | undefined, label: string, warnings: 
   // day, and comparing it with a derived midnight would put a same-day End
   // *before* its Start.
   return startOfDay(parsed)
+}
+
+/**
+ * A milestone's due date is a day, but GitHub hands it over as a UTC
+ * timestamp, normally midnight (`2026-10-03T00:00:00Z`). Read in local time
+ * that is the evening before anywhere west of UTC, so take the UTC calendar
+ * day instead.
+ */
+export function milestoneDay(value: string | null | undefined): Date | null {
+  if (value === null || value === undefined || value.trim() === '') return null
+  const parsed = parseISO(value)
+  if (!isValid(parsed)) return null
+  // A bare `YYYY-MM-DD` already parses to local midnight on that day.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value.trim())) return startOfDay(parsed)
+  return new Date(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate())
+}
+
+function parseDayOrWarn(value: string | null | undefined, label: string, warnings: string[]): Date | null {
+  const day = milestoneDay(value)
+  if (day === null && value !== null && value !== undefined && value.trim() !== '') {
+    warnings.push(`Ignored the ${label}: "${value}" is not a valid date.`)
+  }
+  return day
 }
 
 /** Unreachable for real GitHub data — `createdAt` always parses — but the chain must still end somewhere. */

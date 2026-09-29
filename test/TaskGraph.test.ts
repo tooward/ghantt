@@ -34,6 +34,8 @@ function task(id: TaskId, dependsOn: TaskId[] = []): Task {
     dateSources: { start: 'field', due: 'field' },
     canSetFields: true,
     warnings: [],
+    milestone: null,
+    isRelease: false,
   }
 }
 

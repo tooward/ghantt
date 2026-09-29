@@ -36,6 +36,8 @@ function task(id: TaskId, dependsOn: TaskId[] = []): Task {
     dateSources: { start: 'field', due: 'field' },
     canSetFields: true,
     warnings: [],
+    milestone: null,
+    isRelease: false,
   }
 }
 
@@ -63,6 +65,56 @@ describe('GanttChart', () => {
     await wrapper.setProps({ tasks: [task('a'), task('b'), task('c'), task('d')] })
     expect(rows(wrapper)).toBeGreaterThanOrEqual(4 + 3)
     expect(rows(wrapper)).toBeLessThanOrEqual(4 + 4)
+  })
+
+  describe('milestones', () => {
+    const v1 = {
+      id: 'M1', title: 'v1 <b>beta</b>', dueOn: new Date(2026, 0, 9), url: 'https://github.com/o/r/milestone/1',
+      openIssueCount: 3, closedIssueCount: 1,
+    }
+    const diamondRow = (dependsOn: string[] = []): Task => ({
+      ...task('milestone:M1'),
+      number: 0,
+      title: v1.title,
+      start: v1.dueOn,
+      due: v1.dueOn,
+      dependsOn,
+      marker: { milestone: v1, date: v1.dueOn, synthetic: true },
+    })
+    const group = (wrapper: Awaited<ReturnType<typeof mountChart>>, id: string) =>
+      wrapper.element.querySelector(`.bar-wrapper[data-id="${id}"]`)!
+
+    it('draws a diamond with the milestone’s name beside it, as text', async () => {
+      const wrapper = await mountChart([task('a'), diamondRow()])
+      const row = group(wrapper, 'milestone:M1')
+
+      expect(row.querySelector('.gh-gantt-diamond')).not.toBeNull()
+      expect(row.querySelector('.gh-gantt-diamond-label')!.textContent).toBe('v1 <b>beta</b>')
+      expect(row.querySelector('b')).toBeNull()
+      // frappe's own label is emptied, so it cannot be placed over the diamond.
+      expect(row.querySelector('.bar-label:not(.gh-gantt-diamond-label)')!.textContent).toBe('')
+    })
+
+    it('says what the milestone is in its tooltip', async () => {
+      const wrapper = await mountChart([diamondRow()])
+
+      expect(group(wrapper, 'milestone:M1').querySelector(':scope > title')!.textContent).toBe(
+        'v1 <b>beta</b> — due Fri 9 Jan 2026\n1 of 4 issues closed, of every type',
+      )
+    })
+
+    it('marks a warned diamond', async () => {
+      const wrapper = await mountChart([{ ...diamondRow(), warnings: ['1 issue finishes after this milestone.'] }])
+
+      expect(group(wrapper, 'milestone:M1').classList.contains('gh-gantt-warned')).toBe(true)
+    })
+
+    it('brings roll-up arrows into the diamond’s top point', async () => {
+      const wrapper = await mountChart([task('a'), diamondRow(['a'])])
+      const path = wrapper.element.querySelector('.arrow path[data-to="milestone:M1"]')!
+
+      expect(path.getAttribute('d')).toMatch(/m -5 -5 l 5 5 l 5 -5$/)
+    })
   })
 
   describe('labels', () => {

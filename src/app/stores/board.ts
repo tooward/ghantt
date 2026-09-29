@@ -18,8 +18,9 @@ import { defineStore } from 'pinia'
 import { computed, ref, shallowRef } from 'vue'
 import { GitHubIssueSource } from '../../adapters/github/GitHubIssueSource'
 import { AuthError, type RateLimitInfo } from '../../adapters/github/GitHubClient'
-import type { Task, TaskId } from '../../domain/Task'
+import type { Milestone, Task, TaskId } from '../../domain/Task'
 import { detectAndBreakCycles, pruneDanglingEdges, wouldCreateCycle } from '../../domain/TaskGraph'
+import { buildTimeline } from '../../domain/timeline'
 import type { IssueSource, RepoRef } from '../../ports/IssueSource'
 import type { FieldKind, FieldValue, IssueFieldRef, IssueWriter } from '../../ports/IssueWriter'
 import { formatIssueRef, parseIssueRef, type IssueRef } from '../issueRef'
@@ -82,6 +83,8 @@ export const useBoardStore = defineStore('board', () => {
   const fields = ref<IssueFieldRef[]>([])
   /** Set when the field lookup failed: editing is off, the chart is not. */
   const fieldsError = ref<string | null>(null)
+  /** Open milestones, for the diamonds. Empty when the lookup failed: the chart still works. */
+  const milestones = shallowRef<Milestone[]>([])
   const rateLimit = shallowRef<RateLimitInfo | null>(null)
   /**
    * Issues fetched one at a time for linking, keyed by id. Not on the board,
@@ -128,6 +131,10 @@ export const useBoardStore = defineStore('board', () => {
     }
   })
 
+  /** What the chart draws: the graph's tasks grouped by milestone, with diamond rows. */
+  // Cycle-checked again: roll-ups in two milestones can close a loop between their releases.
+  const timeline = computed<Task[]>(() => detectAndBreakCycles(buildTimeline(graph.value.tasks, milestones.value)).tasks)
+
   const isEmpty = computed(() => !loading.value && tasks.value.length === 0)
 
   /** `keepOnError`: a failed refresh leaves the chart that was already there. */
@@ -161,9 +168,23 @@ export const useBoardStore = defineStore('board', () => {
     totalCount.value = 0
     fields.value = []
     fieldsError.value = null
+    milestones.value = []
     lookups.clear()
     void loadFields(repo.value)
+    void loadMilestones(repo.value)
     await fetchPage(null)
+  }
+
+  /** Beside the first page too: a failure here only leaves the diamonds out. */
+  async function loadMilestones(target: RepoRef): Promise<void> {
+    const fetch = source.value.fetchMilestones
+    if (!fetch) return
+    try {
+      const found = await fetch.call(source.value, target)
+      if (repo.value === target) milestones.value = found
+    } catch {
+      // Deliberately quiet: the issues, and editing, are unaffected.
+    }
   }
 
   /** Runs beside the first page, never in front of it: a failure here only turns editing off. */
@@ -316,6 +337,7 @@ export const useBoardStore = defineStore('board', () => {
     lookups.clear()
     fieldsError.value = null
     void loadFields(target)
+    void loadMilestones(target)
     await fetchPage(null, true)
   }
 
@@ -333,6 +355,7 @@ export const useBoardStore = defineStore('board', () => {
     issueTypes.value = []
     fields.value = []
     fieldsError.value = null
+    milestones.value = []
     lookups.clear()
     error.value = null
   }
@@ -353,6 +376,8 @@ export const useBoardStore = defineStore('board', () => {
     repo,
     tasks,
     graph,
+    timeline,
+    milestones,
     loading,
     error,
     cursor,

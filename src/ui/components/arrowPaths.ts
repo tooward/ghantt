@@ -74,6 +74,36 @@ export function finishToStartPath(from: BarBox, to: BarBox, options: ArrowOption
 }
 
 /**
+ * An arrow into a milestone diamond: out of the bar's right end, then into
+ * the diamond's top point (or bottom, from a row below it). A diamond has no
+ * start edge to come in from the left to, and the usual case — an issue that
+ * ends on the milestone's day — ends exactly above it.
+ */
+export function intoDiamondPath(from: BarBox, diamond: BarBox, options: ArrowOptions = DEFAULT_ARROW_OPTIONS): string {
+  const { rowGap, stub } = options
+  const startX = from.x + from.width
+  const startY = from.y + from.height / 2
+  const tipX = diamond.x + diamond.width / 2
+  const below = startY > diamond.y + diamond.height / 2
+  const tipY = below ? diamond.y + diamond.height + HEAD_GAP : diamond.y - HEAD_GAP
+
+  let points: Point[]
+  if (startX + stub <= tipX) {
+    // Straight along the bar's row, then down (or up) into the point.
+    points = [[startX, startY], [tipX, startY], [tipX, tipY]]
+  } else {
+    // The bar ends past the diamond: out, over to the lane beside the
+    // diamond's row, back along it, and in.
+    const laneY = below ? diamond.y + diamond.height + rowGap / 2 : diamond.y - rowGap / 2
+    const outX = startX + stub
+    points = [[startX, startY], [outX, startY], [outX, laneY], [tipX, laneY], [tipX, tipY]]
+  }
+
+  const head = below ? 'm -5 5 l 5 -5 l 5 5' : 'm -5 -5 l 5 5 l 5 -5'
+  return `${rounded(points, options.radius)} ${head}`
+}
+
+/**
  * An orthogonal polyline with its corners rounded. Each radius is capped at
  * half the shorter neighbouring segment, so short legs never overshoot.
  */

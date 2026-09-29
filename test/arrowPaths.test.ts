@@ -15,7 +15,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { finishToStartPath, type BarBox } from '../src/ui/components/arrowPaths'
+import { finishToStartPath, intoDiamondPath, type BarBox } from '../src/ui/components/arrowPaths'
 
 // Two rows, 30px bars, 18px apart: row 0 mid-height is 15, row 1 is 63.
 const bar = (x: number, width: number, row: number): BarBox => ({ x, y: row * 48, width, height: 30 })
@@ -69,5 +69,40 @@ describe('finishToStartPath', () => {
     const d = finishToStartPath(bar(0, 100, 0), bar(124, 50, 1), { rowGap: 18, stub: 12, radius: 50 })
 
     for (const [x] of points(d)) expect(x).toBeGreaterThanOrEqual(100)
+  })
+})
+
+describe('intoDiamondPath', () => {
+  // A diamond on row 1, centred at x = 300: its top point is at y = 48.
+  const diamond: BarBox = { x: 285, y: 48, width: 30, height: 30 }
+
+  it('runs along the bar’s row and down into the top point when the bar ends before it', () => {
+    const d = intoDiamondPath(bar(0, 200, 0), diamond)
+
+    const visited = points(d)
+
+    expect(visited[0]).toEqual([200, 15])
+    expect(visited.at(-1)).toEqual([300, 46])
+    // Level along the row until the corner, then straight down.
+    expect(visited.filter(([, y]) => y !== 15).every(([x]) => x === 300)).toBe(true)
+    expect(d.endsWith('m -5 -5 l 5 5 l 5 -5')).toBe(true)
+  })
+
+  it('handles the common case: an issue ending on the milestone’s day, right above it', () => {
+    // The bar ends at 300, the diamond's centre: no room to run along, so it loops over.
+    const d = intoDiamondPath(bar(100, 200, 0), diamond)
+    const visited = points(d)
+
+    expect(visited[0]).toEqual([300, 15])
+    expect(visited.at(-1)).toEqual([300, 46])
+    // Never back through the bar: every point is at or right of the bar's end, or on the diamond's axis.
+    expect(visited.every(([x]) => x >= 300)).toBe(true)
+  })
+
+  it('comes up into the bottom point from a row below', () => {
+    const d = intoDiamondPath(bar(0, 100, 3), diamond)
+
+    expect(points(d).at(-1)).toEqual([300, 80])
+    expect(d.endsWith('m -5 5 l 5 -5 l 5 5')).toBe(true)
   })
 })

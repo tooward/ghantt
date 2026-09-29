@@ -18,7 +18,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { AuthError } from '../src/adapters/github/GitHubClient'
 import { useBoardStore } from '../src/app/stores/board'
-import type { Task, TaskId } from '../src/domain/Task'
+import type { Milestone, Task, TaskId } from '../src/domain/Task'
 import type { IssuePage, IssueSource, RepoRef } from '../src/ports/IssueSource'
 import type { FieldValue, IssueFieldRef, IssueWriter } from '../src/ports/IssueWriter'
 
@@ -38,6 +38,8 @@ function task(id: TaskId, dependsOn: TaskId[] = []): Task {
     dateSources: { start: 'field', due: 'field' },
     canSetFields: true,
     warnings: [],
+    milestone: null,
+    isRelease: false,
   }
 }
 
@@ -299,6 +301,63 @@ describe('board store', () => {
     await board.refresh()
 
     expect(source.calls).toEqual([])
+  })
+
+  describe('milestones', () => {
+    const v1: Milestone = {
+      id: 'M1', title: 'v1', dueOn: new Date(2026, 0, 9), url: 'https://github.com/o/r/milestone/1',
+      openIssueCount: 1, closedIssueCount: 0,
+    }
+
+    class MilestoneSource extends FakeSource {
+      milestoneCalls = 0
+      failMilestones = false
+      async fetchMilestones(): Promise<Milestone[]> {
+        this.milestoneCalls += 1
+        if (this.failMilestones) throw new Error('milestones unavailable')
+        return [v1]
+      }
+    }
+
+    const member = { ...task('#1'), milestone: { id: 'M1', title: 'v1', dueOn: v1.dueOn } }
+
+    it('loads milestones beside the first page and charts them as diamonds', async () => {
+      const board = useBoardStore()
+      const source = new MilestoneSource([pageOf([member, task('#2')], null, 2)])
+      board.useSource(source)
+      await board.loadRepo('o', 'r')
+
+      expect(source.milestoneCalls).toBe(1)
+      expect(board.timeline.map((row) => row.id)).toEqual(['#1', 'milestone:M1', '#2'])
+      // The issue list itself is untouched: no stand-in rows in it.
+      expect(board.tasks.map((t) => t.id)).toEqual(['#1', '#2'])
+    })
+
+    it('still charts the issues when the milestone lookup fails', async () => {
+      const board = useBoardStore()
+      const source = new MilestoneSource([pageOf([member], null, 1)])
+      source.failMilestones = true
+      board.useSource(source)
+      await board.loadRepo('o', 'r')
+
+      expect(board.error).toBeNull()
+      expect(board.milestones).toEqual([])
+      // Its own milestone reference still groups it; with a due date, it still gets a diamond.
+      expect(board.timeline.map((row) => row.id)).toEqual(['#1', 'milestone:M1'])
+    })
+
+    it('looks the milestones up again on refresh, and forgets them on clear', async () => {
+      const board = useBoardStore()
+      const source = new MilestoneSource([pageOf([member], null, 1)])
+      board.useSource(source)
+      await board.loadRepo('o', 'r')
+      await board.refresh()
+      await Promise.resolve()
+
+      expect(source.milestoneCalls).toBe(2)
+      board.clear()
+      expect(board.milestones).toEqual([])
+    })
   })
 
   it('does not page past the end', async () => {
