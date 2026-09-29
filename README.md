@@ -1,4 +1,4 @@
-# gh-gantt
+# ghantt
 
 A browser-hosted Gantt chart for GitHub issues, with dependency arrows.
 

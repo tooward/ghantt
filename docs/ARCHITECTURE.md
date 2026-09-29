@@ -1,6 +1,6 @@
 # Architecture
 
-**Project:** `gh-gantt` — a browser-hosted Gantt chart for GitHub issues.
+**Project:** `ghantt` (named `gh-gantt` until 2026-09-29) — a browser-hosted Gantt chart for GitHub issues.
 **Status:** Design agreed, not yet implemented.
 **Last verified:** 2026-09-17 (all API shapes and package versions in this document were checked against live sources on that date).
 

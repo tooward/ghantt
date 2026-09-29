@@ -35,7 +35,9 @@
  * session-only storage rather than degrading to plaintext at rest.
  */
 
-const RP_NAME = 'gh-gantt'
+const RP_NAME = 'Ghantt'
+// Keeps the project's old name on purpose: it is mixed into the encryption
+// key, so changing it would make every token already remembered unreadable.
 const PRF_INFO = 'gh-gantt:token-encryption:v1'
 const KEY_BYTES = 32
 const IV_BYTES = 12
@@ -212,7 +214,7 @@ export async function encryptWithNewPasskey(token: string, label: string): Promi
       publicKey: {
         rp: { name: RP_NAME },
         // Not an account: the passkey exists only to hold an encryption secret.
-        user: { id: randomBytes(16) as BufferSource, name: label || 'gh-gantt token', displayName: label || 'gh-gantt token' },
+        user: { id: randomBytes(16) as BufferSource, name: label || 'Ghantt token', displayName: label || 'Ghantt token' },
         challenge: randomBytes(32) as BufferSource,
         pubKeyCredParams: [
           { type: 'public-key', alg: -7 },
@@ -227,7 +229,7 @@ export async function encryptWithNewPasskey(token: string, label: string): Promi
     if (credential.getClientExtensionResults().prf?.enabled === false) {
       throw new PasskeyError(
         'no-prf',
-        'This authenticator does not support the PRF extension. You can delete the gh-gantt passkey it created.',
+        'This authenticator does not support the PRF extension. You can delete the Ghantt passkey it created.',
       )
     }
 
