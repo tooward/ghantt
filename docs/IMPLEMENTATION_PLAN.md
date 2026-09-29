@@ -32,10 +32,10 @@ Read [ARCHITECTURE.md](./ARCHITECTURE.md) first. This document assumes its decis
 
 ### Steps
 
-1. Scaffold in the existing repo directory (`~/dev/gh-gantt`, already `git init`-ed on `main`):
+1. Scaffold in the existing repo directory (`~/dev/ghantt`, already `git init`-ed on `main`):
 
 ```bash
-cd ~/dev/gh-gantt && npm create vite@latest . -- --template vue-ts
+cd ~/dev/ghantt && npm create vite@latest . -- --template vue-ts
 ```
 
 2. Install dependencies. **Check the resolved versions afterwards** — the versions in ARCHITECTURE.md §3 were correct on 2026-09-17 but move fast.
@@ -81,7 +81,7 @@ declare module '*.graphql?raw' {
 4. Create the directory skeleton with a `.gitkeep` in each:
 
 ```bash
-cd ~/dev/gh-gantt && mkdir -p src/{domain,ports,adapters/github/queries,adapters/storage,app/stores,ui/views,ui/components} test/fixtures && find src test -type d -empty -exec touch {}/.gitkeep \;
+cd ~/dev/ghantt && mkdir -p src/{domain,ports,adapters/github/queries,adapters/storage,app/stores,ui/views,ui/components} test/fixtures && find src test -type d -empty -exec touch {}/.gitkeep \;
 ```
 
 5. Add the **dependency-rule lint**. This is what keeps the layering honest; without it the boundaries rot within a week. ESLint 9 uses **flat config** — create `eslint.config.js` (not `.eslintrc`):
@@ -142,7 +142,7 @@ Verify the rule actually bites before moving on: temporarily add `import { GitHu
 ### Acceptance criteria
 
 ```bash
-cd ~/dev/gh-gantt && npm run verify
+cd ~/dev/ghantt && npm run verify
 ```
 
 - Exits 0.
@@ -236,7 +236,7 @@ Requirements:
 - Grep check — must print nothing:
 
 ```bash
-cd ~/dev/gh-gantt && grep -rn "localStorage" src/ --exclude=SettingsStore.ts || echo "clean"
+cd ~/dev/ghantt && grep -rn "localStorage" src/ --exclude=SettingsStore.ts || echo "clean"
 ```
 
   The exclusion is there from Phase 6 onwards: step 3 of that phase puts user *settings* in local storage, and `adapters/storage/SettingsStore.ts` is the only file allowed to touch it. Before Phase 6 the file does not exist and the check is the plain grep. The token must never appear there — `test/settings.test.ts` asserts it.
@@ -321,7 +321,7 @@ export function detectAndBreakCycles(tasks: Task[]): { tasks: Task[]; brokenEdge
 ### Acceptance criteria
 
 ```bash
-cd ~/dev/gh-gantt && npm run test -- --coverage
+cd ~/dev/ghantt && npm run test -- --coverage
 ```
 
 - `src/domain/**` line coverage ≥ 90%.
@@ -337,7 +337,7 @@ cd ~/dev/gh-gantt && npm run test -- --coverage
 - Grep check — must print nothing:
 
 ```bash
-cd ~/dev/gh-gantt && grep -rn "from 'vue'\|adapters/" src/domain/ || echo "clean"
+cd ~/dev/ghantt && grep -rn "from 'vue'\|adapters/" src/domain/ || echo "clean"
 ```
 
 ### Commit
@@ -542,7 +542,7 @@ Add a view-mode switcher backed by `settings.ts`. Valid values are exactly: `'Ho
 - Final check — must print nothing:
 
 ```bash
-cd ~/dev/gh-gantt && grep -rniE "gh[pousr]_[A-Za-z0-9]{16,}" . --exclude-dir=node_modules --exclude-dir=.git || echo "no tokens committed"
+cd ~/dev/ghantt && grep -rniE "gh[pousr]_[A-Za-z0-9]{16,}" . --exclude-dir=node_modules --exclude-dir=.git || echo "no tokens committed"
 ```
 
 ### Commit

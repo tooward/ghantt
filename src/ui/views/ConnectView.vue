@@ -45,7 +45,7 @@ async function onUnlock() {
   <section class="mx-auto max-w-lg">
     <h2 class="text-xl font-semibold text-gray-900">Connect to GitHub</h2>
     <p class="mt-2 text-sm text-gray-600">
-      gh-gantt reads issues directly from your browser. Your token is sent only to
+      Ghantt reads issues directly from your browser. Your token is sent only to
       <code class="rounded bg-gray-100 px-1">api.github.com</code> and never to any server of ours.
     </p>
 
