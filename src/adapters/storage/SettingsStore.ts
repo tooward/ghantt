@@ -23,6 +23,7 @@
  * simply means the app runs with defaults.
  */
 
+// The project's old name, kept so settings saved before the rename still load.
 const KEY = 'gh-gantt:settings'
 
 export function loadSettings<T extends object>(): Partial<T> {

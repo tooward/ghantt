@@ -49,6 +49,7 @@ export type RememberResult =
   | { status: 'pending' }
   | { status: 'failed'; reason: PasskeyFailure; message: string }
 
+// The project's old name, kept so a token remembered before the rename is still found.
 const SESSION_KEY = 'gh-gantt:token'
 const DB_NAME = 'gh-gantt'
 const DB_VERSION = 1

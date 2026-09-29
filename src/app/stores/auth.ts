@@ -126,13 +126,13 @@ export const useAuthStore = defineStore('auth', () => {
       // Still pending: the same passkey can be tried again.
       pendingPasskey.value = true
       persistenceNotice.value =
-        'The passkey was not used, so the token is not saved yet. Try again, or dismiss this and delete the unused gh-gantt passkey from your password manager.'
+        'The passkey was not used, so the token is not saved yet. Try again, or dismiss this and delete the unused Ghantt passkey from your password manager.'
       return
     }
     if (result.status === 'failed') {
       applyRememberResult({
         ...result,
-        message: `${result.message} You can delete the unused gh-gantt passkey from your password manager.`,
+        message: `${result.message} You can delete the unused Ghantt passkey from your password manager.`,
       })
       return
     }
