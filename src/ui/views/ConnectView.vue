@@ -47,6 +47,7 @@ async function onUnlock() {
     <p class="mt-2 text-sm text-gray-600">
       Ghantt reads issues directly from your browser. Your token is sent only to
       <code class="rounded bg-gray-100 px-1">api.github.com</code> and never to any server of ours.
+      <a href="/help.html" target="_blank" rel="noopener" class="underline">How to use Ghantt</a>
     </p>
 
     <div

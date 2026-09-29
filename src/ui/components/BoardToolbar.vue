@@ -129,6 +129,15 @@ onMounted(() => {
         >
           <option v-for="mode in settings.viewModes" :key="mode" :value="mode">{{ mode }}</option>
         </select>
+        <!-- A separate page, in a new tab, so reading it never loses the chart. -->
+        <a
+          href="/help.html"
+          target="_blank"
+          rel="noopener"
+          class="ml-1 flex h-7 w-7 items-center justify-center rounded-full border border-gray-300 bg-white text-sm font-semibold text-gray-600 hover:bg-gray-100"
+          aria-label="Help (opens in a new tab)"
+          title="How to use Ghantt"
+        >?</a>
       </div>
     </div>
 

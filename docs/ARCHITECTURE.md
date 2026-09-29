@@ -17,7 +17,7 @@ A **static, browser-only single-page application** that reads issues from GitHub
 | Issue sources | **GitHub only** | No GitLab adapter. A `IssueSource` port still exists so one could be added, but do not build it. |
 | Direction | **Read, plus date and blocker edits** (changed 2026-09-23; was read-only) | Writes are `setIssueFieldValue` on an issue's Start/End date fields, and `addBlockedBy` / `removeBlockedBy` for blocking links, all from the detail panel. No optimistic UI: the panel waits for GitHub and swaps in the issues as returned (both sides of a link). Date writes set absolute values and links are idempotent, so no conflict handling is needed yet. A new link is refused before any request if the loaded tasks show it would close a loop (`wouldCreateCycle`). |
 | Hosting | **Static files, no backend** | No server to hold secrets. This constrains authentication (see §6). |
-| Deployment | Any static host (GitHub Pages, Netlify, Vercel static) | Build output is plain `index.html` + assets. |
+| Deployment | Any static host; **Cloudflare Pages** chosen 2026-09-29 | Build output is plain `index.html` + `help.html` + assets. `public/_headers` sets the CSP and related headers. |
 | Browser target | **Chrome / Chromium only, for now** | Other browsers are expected later, so do not build foundations on Chromium-only APIs. See §6. |
 
 ### Explicit non-goals

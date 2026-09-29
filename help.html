@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ghantt help</title>
+    <script type="module" src="/src/help.ts"></script>
+  </head>
+  <body class="bg-white text-gray-900">
+    <header class="border-b border-gray-200">
+      <div class="flex items-center justify-between px-6 py-4">
+        <a href="/" class="flex items-center gap-2 text-lg font-semibold">
+          <img src="/src/assets/logo.png" alt="" class="h-6 w-6" />
+          Ghantt
+        </a>
+        <a href="/" class="text-sm underline decoration-gray-400 hover:decoration-gray-900">Back to the chart</a>
+      </div>
+    </header>
+
+    <main class="help mx-auto max-w-3xl px-6 pb-16 pt-8">
+      <h1 class="text-3xl font-semibold text-gray-900">How to use Ghantt</h1>
+      <p>
+        Ghantt draws the open issues of a GitHub repository as a Gantt chart: one bar per issue, arrows for
+        what blocks what, and diamonds for milestones. You can change an issue's dates, its Days and its
+        blocking links from the chart, and they are saved straight to GitHub.
+      </p>
+      <p>
+        It runs entirely in your browser. There is no Ghantt server: your token and your issues go only
+        between your browser and GitHub.
+      </p>
+
+      <nav class="tip" aria-label="Contents">
+        <strong>On this page</strong>
+        <ul class="mt-1">
+          <li><a href="#getting-started">Getting started</a></li>
+          <li><a href="#reading-the-chart">Reading the chart</a></li>
+          <li><a href="#editing">Changing dates and Days</a></li>
+          <li><a href="#dependencies">Blocking links</a></li>
+          <li><a href="#milestones">Milestones and releases</a></li>
+          <li><a href="#settings">Settings</a></li>
+          <li><a href="#token">Your token and privacy</a></li>
+          <li><a href="#troubleshooting">When something looks wrong</a></li>
+        </ul>
+      </nav>
+
+      <h2 id="getting-started">Getting started</h2>
+
+      <h3>1. Create a token</h3>
+      <p>
+        Ghantt reads GitHub with a personal access token that you create. Go to
+        <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">GitHub → Settings → Fine-grained tokens → Generate new token</a>
+        and set:
+      </p>
+      <ul>
+        <li><strong>Resource owner:</strong> the organisation that owns the repository (for example <code>shieldedtech</code>), not your personal account.</li>
+        <li><strong>Repository access:</strong> the repositories you want to chart.</li>
+        <li><strong>Repository permissions → Issues:</strong> <em>Read and write</em> to change dates and links, or <em>Read-only</em> just to view.</li>
+        <li><strong>Repository permissions → Metadata:</strong> <em>Read-only</em>.</li>
+        <li><strong>Expiration:</strong> 90 days or less.</li>
+      </ul>
+      <p class="note">
+        Some organisations must approve a new fine-grained token before it works. If the chart says the
+        repository cannot be found, check the token's status on the same GitHub page.
+      </p>
+
+      <h3>2. Connect</h3>
+      <p>
+        Paste the token into <strong>Personal access token</strong> and choose <strong>Connect</strong>. Your
+        browser or password manager will usually offer to save it — that is a good place to keep it.
+      </p>
+      <p>
+        Tick <strong>Remember this token on this device</strong> to keep it between visits. It is encrypted
+        with a passkey, so next time you choose <strong>Unlock with passkey</strong> and confirm with your
+        fingerprint, face or PIN. Without this, the token is forgotten when you close the tab.
+      </p>
+
+      <h3>3. Choose what to chart</h3>
+      <p>
+        Use the button at the left of the toolbar (it shows <em>Choose repository</em> until something is
+        loaded) to enter the <strong>Owner</strong>, <strong>Repository</strong> and <strong>Type</strong>, then
+        <strong>Load</strong>. Type is the GitHub issue type, <em>Feature</em> by default; clear it to chart
+        every type. Ghantt remembers your choice for next time.
+      </p>
+
+      <h2 id="reading-the-chart">Reading the chart</h2>
+      <ul>
+        <li><strong>Bars</strong> run from an issue's Start to its End. Start and End both count, so an issue from 1 October to 1 October is one day long.</li>
+        <li><strong>Green</strong> bars are fine. <strong>Amber</strong> bars have a warning — hover over the bar to read it.</li>
+        <li><strong>Arrows</strong> run from the end of an issue to the start of an issue it blocks.</li>
+        <li><strong>Diamonds</strong> are milestones, on their due date. See <a href="#milestones">Milestones and releases</a>.</li>
+        <li>A label that does not fit its bar is cut short with “…”. Hover over the bar for the full title.</li>
+        <li><strong>Scale</strong>, at the right of the toolbar, switches between Day, Week and Month.</li>
+        <li>The <strong>refresh</strong> button next to the repository name loads the issues again, to pick up changes made in GitHub.</li>
+        <li>Large repositories load in pages. <strong>Load more</strong> under the chart fetches the next one.</li>
+        <li>The battery in the header is your remaining GitHub API budget for the hour.</li>
+      </ul>
+
+      <h3>Where the dates come from</h3>
+      <p>
+        GitHub issues have no built-in start or end date, so Ghantt uses the first of these it finds:
+      </p>
+      <ul>
+        <li><strong>End:</strong> the issue's <code>End</code> date field, then Start + Days, then the milestone's due date, then the Start plus the default length (one day unless you change it in Settings, so End = Start).</li>
+        <li><strong>Start:</strong> the issue's <code>Start</code> date field, then End − Days, then the End minus the default length, then the day the issue was created.</li>
+      </ul>
+      <p>
+        Days are working days, Monday to Friday. When a date did not come from the issue's own field, the
+        panel says where it came from, for example “(from the milestone)”.
+      </p>
+
+      <h2 id="editing">Changing dates and Days</h2>
+      <p>
+        Click a bar to open its panel at the top right. It shows the issue's <strong>Start</strong>,
+        <strong>End</strong>, <strong>Length</strong> (working days from Start to End) and <strong>Days</strong>
+        (how many working days of effort the issue needs), plus its milestone and links.
+      </p>
+      <ul>
+        <li>Change the boxes and choose <strong>Save</strong>. Only what you changed is written to GitHub.</li>
+        <li>
+          <strong>Days is filled in for you</strong> when an issue has both a Start and an End but no Days:
+          opening it saves Days from Start–End, and the panel says so. An existing Days value is never
+          overwritten.
+        </li>
+        <li>
+          When Start–End and Days disagree, the panel says so and offers <strong>Set Days from
+          Start–End</strong>, <strong>Set End from Days</strong> and <strong>Set Start from Days</strong>. Each
+          one fills in its box and waits for you to save.
+        </li>
+        <li>
+          You can keep dates that disagree: the button becomes <strong>Save anyway</strong>. Ghantt cannot see
+          everything — shared or part-time work, for instance — so the decision is yours.
+        </li>
+        <li><strong>Revert</strong> puts the boxes back to what GitHub holds. <strong>Open in GitHub</strong> opens the issue.</li>
+      </ul>
+      <p class="tip">
+        If a date shows as plain text rather than a box, it cannot be edited here. The panel says why —
+        usually that the repository has no date field of that name, or that you do not have permission.
+      </p>
+
+      <h2 id="dependencies">Blocking links</h2>
+      <p>
+        The panel lists what the issue is <strong>Blocked by</strong> and what it <strong>Blocks</strong>.
+      </p>
+      <ul>
+        <li><strong>Add blocker</strong> or <strong>Add blocked issue</strong> opens a list of the issues on the chart. Type a number or part of a title and pick one.</li>
+        <li>To link an issue that is not on the chart, type <code>#123</code>, <code>owner/repo#123</code> or paste the issue's URL, then choose <strong>Look up</strong>.</li>
+        <li>Issues that would create a loop are greyed out, with the reason.</li>
+        <li>Removing a link asks you to confirm.</li>
+      </ul>
+
+      <h2 id="milestones">Milestones and releases</h2>
+      <p>
+        Each open milestone with a due date is a diamond on that date. The milestone's issues are grouped
+        above it, and the last of them have arrows into it. Hover over a diamond to see how many of the
+        milestone's issues are closed.
+      </p>
+      <p>
+        A GitHub milestone cannot block other issues. To make later work wait for a release, use a
+        <strong>release issue</strong>:
+      </p>
+      <ol>
+        <li>Create the milestone, for example <code>v1.0</code>, with a <strong>due date</strong>.</li>
+        <li>Create an issue such as “Release v1.0”, give it the <code>release</code> label, and put it in the <code>v1.0</code> milestone. It becomes the milestone's diamond.</li>
+        <li>Put the work that ships in the release into the same milestone.</li>
+        <li>On each piece of work that must wait for the release, add the release issue under <strong>Blocked by</strong>.</li>
+      </ol>
+      <p class="note">
+        Creating milestones and labels needs <strong>Write</strong> access to the repository. With
+        <strong>Triage</strong> access you can put issues into a milestone and apply a label that already
+        exists. Ask a repository admin if the buttons are missing.
+      </p>
+      <p>
+        If you see two diamonds for one milestone, the release issue is not in the milestone, or does not
+        have the <code>release</code> label. Fix it in GitHub and press refresh.
+      </p>
+      <p>Ghantt warns, but never stops you, when:</p>
+      <ul>
+        <li>an issue ends after its milestone;</li>
+        <li>work that waits on a release is set to start on or before the release day;</li>
+        <li>a release issue's End is not the milestone's due date;</li>
+        <li>a milestone has more than one release issue.</li>
+      </ul>
+
+      <h2 id="settings">Settings</h2>
+      <p>The gear in the header opens Settings. They are saved in this browser.</p>
+      <ul>
+        <li><strong>Start field</strong>, <strong>End field</strong> and <strong>Days field</strong>: the names of the issue fields Ghantt reads, <code>Start</code>, <code>End</code> and <code>Days</code> by default. Days must be a Number field.</li>
+        <li><strong>Release label</strong>: the label that marks a milestone's release issue, <code>release</code> by default.</li>
+        <li><strong>Default task length</strong>: how long an issue is drawn when nothing says, in working days.</li>
+        <li><strong>Issues per request</strong>: how many issues each page loads, up to 100.</li>
+      </ul>
+
+      <h2 id="token">Your token and privacy</h2>
+      <ul>
+        <li>Your token is sent only to <code>api.github.com</code>. Ghantt has no server to send it to.</li>
+        <li>You only ever see what your own GitHub account can see.</li>
+        <li>A remembered token is stored encrypted, and unlocking it needs your passkey.</li>
+        <li><strong>Disconnect</strong>, the power button in the header, forgets the token on this device.</li>
+        <li>Ghantt only changes GitHub when you ask it to, and then only an issue's Start, End, Days and blocking links.</li>
+      </ul>
+
+      <h2 id="troubleshooting">When something looks wrong</h2>
+      <h3>“You do not have permission to set fields on this issue”</h3>
+      <p>Your GitHub account needs at least <strong>Triage</strong> access to the repository. A repository admin can grant it.</p>
+      <h3>Save fails with a permission message</h3>
+      <p>
+        The token cannot write. Check it has <strong>Issues: Read and write</strong>, that its resource owner
+        is the organisation, and that the organisation has approved it.
+      </p>
+      <h3>“This repository has no field named …”</h3>
+      <p>The name in Settings does not match an issue field in the organisation. Check the spelling, or ask an organisation admin to create the field.</p>
+      <h3>A bar is amber</h3>
+      <p>Hover over it to read the warning. Common ones: a date could not be read, Start–End disagrees with Days, or an issue ends after its milestone.</p>
+      <h3>An issue is missing</h3>
+      <p>
+        Only open issues of the chosen type are charted. Check the Type in the toolbar, use
+        <strong>Load more</strong> if there is one, and press refresh after changing things in GitHub.
+      </p>
+    </main>
+  </body>
+</html>

@@ -13,6 +13,15 @@ const frappeGanttCss = fileURLToPath(
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [vue(), tailwindcss()],
+  build: {
+    rollupOptions: {
+      // Two pages: the app, and the static help page it links to.
+      input: {
+        main: fileURLToPath(new URL('./index.html', import.meta.url)),
+        help: fileURLToPath(new URL('./help.html', import.meta.url)),
+      },
+    },
+  },
   resolve: {
     alias: {
       'frappe-gantt/dist/frappe-gantt.css': frappeGanttCss,
