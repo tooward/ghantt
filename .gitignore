@@ -22,3 +22,6 @@ pnpm-debug.log*
 .idea
 .DS_Store
 *.sw?
+
+# Cloudflare wrangler local state (from `wrangler pages dev`)
+.wrangler
