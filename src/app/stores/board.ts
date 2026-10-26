@@ -19,6 +19,7 @@ import { computed, ref, shallowRef } from 'vue'
 import { GitHubIssueSource } from '../../adapters/github/GitHubIssueSource'
 import { AuthError, type RateLimitInfo } from '../../adapters/github/GitHubClient'
 import type { Milestone, Task, TaskId } from '../../domain/Task'
+import { filterByLabels, labelsOf } from '../../domain/labelFilter'
 import { detectAndBreakCycles, pruneDanglingEdges, wouldCreateCycle } from '../../domain/TaskGraph'
 import { buildTimeline } from '../../domain/timeline'
 import type { IssueSource, RepoRef } from '../../ports/IssueSource'
@@ -91,6 +92,13 @@ export const useBoardStore = defineStore('board', () => {
    * but their own links still count when checking a new link for loops.
    */
   const lookups = new Map<TaskId, Task>()
+  /**
+   * Labels to chart: an issue is shown when it has any of them. Empty shows
+   * every issue. Labels belong to a repository, so this is not saved in settings.
+   */
+  const labelFilter = ref<string[]>([])
+  /** Every label on the loaded issues, for the filter to offer. */
+  const labels = computed(() => labelsOf(tasks.value))
 
   /** Recomputed over the whole accumulated set, so paging in issues heals edges. */
   const graph = computed<BoardGraph>(() => {
@@ -131,9 +139,12 @@ export const useBoardStore = defineStore('board', () => {
     }
   })
 
-  /** What the chart draws: the graph's tasks grouped by milestone, with diamond rows. */
+  /** The graph's tasks that pass the label filter, with edges into hidden ones dropped. */
+  const visibleTasks = computed<Task[]>(() => filterByLabels(graph.value.tasks, labelFilter.value))
+
+  /** What the chart draws: the visible tasks grouped by milestone, with diamond rows. */
   // Cycle-checked again: roll-ups in two milestones can close a loop between their releases.
-  const timeline = computed<Task[]>(() => detectAndBreakCycles(buildTimeline(graph.value.tasks, milestones.value)).tasks)
+  const timeline = computed<Task[]>(() => detectAndBreakCycles(buildTimeline(visibleTasks.value, milestones.value)).tasks)
 
   const isEmpty = computed(() => !loading.value && tasks.value.length === 0)
 
@@ -169,6 +180,7 @@ export const useBoardStore = defineStore('board', () => {
     fields.value = []
     fieldsError.value = null
     milestones.value = []
+    labelFilter.value = []
     lookups.clear()
     void loadFields(repo.value)
     void loadMilestones(repo.value)
@@ -356,6 +368,7 @@ export const useBoardStore = defineStore('board', () => {
     fields.value = []
     fieldsError.value = null
     milestones.value = []
+    labelFilter.value = []
     lookups.clear()
     error.value = null
   }
@@ -376,6 +389,9 @@ export const useBoardStore = defineStore('board', () => {
     repo,
     tasks,
     graph,
+    labels,
+    labelFilter,
+    visibleTasks,
     timeline,
     milestones,
     loading,

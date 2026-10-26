@@ -265,9 +265,14 @@ describe('mapIssue — milestone and release label', () => {
     expect(mapIssue(inMilestone, { ...cfg, releaseLabel: ' ' }).isRelease).toBe(false)
   })
 
+  it('keeps every label name, as GitHub spells it', () => {
+    expect(mapIssue(inMilestone, cfg).labels).toEqual(['bug', 'Release'])
+  })
+
   it('copes with no labels and a milestone without an id', () => {
     const task = mapIssue(syntheticNodes[1], cfg)
 
+    expect(task.labels).toEqual([])
     expect(task.isRelease).toBe(false)
     expect(task.milestone).toBeNull()
   })
