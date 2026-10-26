@@ -57,7 +57,7 @@ watch(messages, () => {
 <template>
   <aside
     v-if="messages.length && !dismissed"
-    class="mt-4 flex items-start gap-3 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+    class="mb-2 flex items-start gap-3 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
   >
     <ul class="flex-1 space-y-1">
       <li v-for="message in messages" :key="message">{{ message }}</li>

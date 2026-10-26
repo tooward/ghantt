@@ -48,6 +48,10 @@ declare module 'frappe-gantt' {
     view_mode?: FrappeViewMode
     readonly?: boolean
     bar_height?: number
+    /** Space between rows: half above each bar, half below. */
+    padding?: number
+    upper_header_height?: number
+    lower_header_height?: number
     column_width?: number
     arrow_curve?: number
     container_height?: number | 'auto'

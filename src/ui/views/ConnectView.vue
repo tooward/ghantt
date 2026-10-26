@@ -42,7 +42,7 @@ async function onUnlock() {
 </script>
 
 <template>
-  <section class="mx-auto max-w-lg">
+  <section class="mx-auto w-full max-w-lg">
     <h2 class="text-xl font-semibold text-gray-900">Connect to GitHub</h2>
     <p class="mt-2 text-sm text-gray-600">
       Ghantt reads issues directly from your browser. Your token is sent only to

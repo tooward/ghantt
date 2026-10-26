@@ -15,28 +15,24 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { fitLabel } from '../src/ui/components/barLabels'
+import { LABEL_INSET, placeLabel } from '../src/ui/components/barLabels'
 
-/** Seven pixels a character, near enough to 13px Helvetica for these checks. */
-const measure = (text: string) => text.length * 7
+const bar = { x: 100, width: 80 }
 
-describe('fitLabel', () => {
-  it('keeps a label that fits', () => {
-    expect(fitLabel('#12 Short', 100, measure)).toBe('#12 Short')
+describe('placeLabel', () => {
+  it('centres a label that fits inside its bar', () => {
+    expect(placeLabel(bar, 40)).toEqual({ x: 120, spills: false })
   })
 
-  it('cuts a long label to the longest start that fits, with an ellipsis', () => {
-    const fitted = fitLabel('#173 Serialization format', 70, measure)
-
-    expect(fitted).toBe('#173 Seri…')
-    expect(measure(fitted)).toBeLessThanOrEqual(70)
+  it('still fits with exactly the inset to spare at each end', () => {
+    expect(placeLabel(bar, 80 - 2 * LABEL_INSET)).toEqual({ x: 100 + LABEL_INSET, spills: false })
   })
 
-  it('does not leave a space before the ellipsis', () => {
-    expect(fitLabel('#173 Serialization', 42, measure)).toBe('#173…')
+  it('spills a label that would crowd the ends, starting just past the bar', () => {
+    expect(placeLabel(bar, 80 - 2 * LABEL_INSET + 1)).toEqual({ x: 180 + LABEL_INSET, spills: true })
   })
 
-  it('is empty when not even the ellipsis fits', () => {
-    expect(fitLabel('#1 Anything', 5, measure)).toBe('')
+  it('spills from a bar too narrow for any text', () => {
+    expect(placeLabel({ x: 0, width: 4 }, 0.5)).toEqual({ x: 4 + LABEL_INSET, spills: true })
   })
 })

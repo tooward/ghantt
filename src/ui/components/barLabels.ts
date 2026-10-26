@@ -14,28 +14,24 @@
  * limitations under the License.
  */
 
-/** Room left between a label and each end of its bar. */
+import type { BarBox } from './arrowPaths'
+
+/** Room left between a label and each end of its bar, or the bar's end and a label beside it. */
 export const LABEL_INSET = 6
 
-const ELLIPSIS = '…'
+export interface LabelPlacement {
+  /** The label's left edge. */
+  x: number
+  /** True when the label does not fit inside the bar and sits after it instead. */
+  spills: boolean
+}
 
 /**
- * The longest start of `text` that fits in `maxWidth`, ending in "…" when
- * anything was cut. Empty when not even "…" fits: the label must stay inside
- * its bar, and the bar's tooltip still has the full text. `measure` returns
- * a candidate's rendered width.
+ * Where a label of `length` pixels goes: centred in its bar when it fits with
+ * `LABEL_INSET` to spare at each end, otherwise in full just past the bar's
+ * end. A label is never cut; the bar's tooltip carries the same text.
  */
-export function fitLabel(text: string, maxWidth: number, measure: (candidate: string) => number): string {
-  if (measure(text) <= maxWidth) return text
-  if (measure(ELLIPSIS) > maxWidth) return ''
-
-  // Binary search on the number of characters kept before the ellipsis.
-  let low = 0
-  let high = text.length - 1
-  while (low < high) {
-    const mid = Math.ceil((low + high) / 2)
-    if (measure(text.slice(0, mid).trimEnd() + ELLIPSIS) <= maxWidth) low = mid
-    else high = mid - 1
-  }
-  return text.slice(0, low).trimEnd() + ELLIPSIS
+export function placeLabel(bar: Pick<BarBox, 'x' | 'width'>, length: number): LabelPlacement {
+  if (length <= bar.width - 2 * LABEL_INSET) return { x: bar.x + (bar.width - length) / 2, spills: false }
+  return { x: bar.x + bar.width + LABEL_INSET, spills: true }
 }

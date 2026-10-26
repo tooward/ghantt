@@ -20,7 +20,7 @@ import Gantt, { type FrappeOptions, type FrappeTask, type FrappeViewMode } from 
 import { onBeforeUnmount, shallowRef, watch } from 'vue'
 import { isRepoMilestone, type Task, type TaskId } from '../../domain/Task'
 import { finishToStartPath, intoDiamondPath, type BarBox } from './arrowPaths'
-import { fitLabel, LABEL_INSET } from './barLabels'
+import { LABEL_INSET, placeLabel } from './barLabels'
 import { barName, toFrappeTasks, WARNED_BAR_CLASS } from './frappeTasks'
 import 'frappe-gantt/dist/frappe-gantt.css'
 
@@ -49,21 +49,36 @@ function selectTask(frappeTask: FrappeTask): void {
 }
 
 /** Blank rows under the last bar, so the chart does not end hard against its last issue. */
-const EMPTY_ROWS = 3
+const EMPTY_ROWS = 1
+
+/**
+ * Tighter than frappe's defaults (bars 30, 18 between rows, a 45 + 30 header),
+ * so more issues fit on screen. The upper header must still clear frappe's
+ * month text, which it places 17px down, and the Today button (see the
+ * stylesheet below).
+ */
+const BAR_HEIGHT = 22
+const ROW_GAP = 10
+const UPPER_HEADER_HEIGHT = 36
+const LOWER_HEADER_HEIGHT = 26
 
 /**
  * The grid height frappe would pick for `count` rows, plus the blank ones. The
- * same sum as its own (`make_grid_background`), using the defaults this app
- * leaves alone: bars 30 high, 18 between rows, a 45 + 30 + 10 header.
+ * same sum as its own (`make_grid_background`); frappe adds 10 to the header.
  */
 function chartHeight(count: number): number {
-  return 85 + 18 + (30 + 18) * (count + EMPTY_ROWS) - 10
+  const header = UPPER_HEADER_HEIGHT + LOWER_HEADER_HEIGHT + 10
+  return header + ROW_GAP + (BAR_HEIGHT + ROW_GAP) * (count + EMPTY_ROWS) - 10
 }
 
 function options(): FrappeOptions {
   return {
     view_mode: props.viewMode,
     container_height: chartHeight(props.tasks.length),
+    bar_height: BAR_HEIGHT,
+    padding: ROW_GAP,
+    upper_header_height: UPPER_HEADER_HEIGHT,
+    lower_header_height: LOWER_HEADER_HEIGHT,
     // This app never edits: the chart is a view of GitHub, not an editor.
     readonly: true,
     popup: false,
@@ -101,13 +116,10 @@ function render(): void {
 
   // The instance method. The package README shows `gantt.tasks.refresh()`,
   // which does not exist — following it means the chart silently never updates.
-  // A fixed height does not follow the task count on its own. `refresh` reads
-  // the option for the grid, but the container's CSS height is only set when
-  // options are first read, so that is set here too. (`update_options` would
-  // do both, at the cost of drawing everything twice.)
-  const height = chartHeight(props.tasks.length)
-  gantt.value.options.container_height = height
-  el.querySelector<HTMLElement>('.gantt-container')?.style.setProperty('--gv-grid-height', `${height}px`)
+  // The grid's height does not follow the task count on its own: `refresh`
+  // reads the option for it, so it is updated first. The container's own
+  // height is the box it sits in, set by the stylesheet below.
+  gantt.value.options.container_height = chartHeight(props.tasks.length)
   gantt.value.refresh(frappeTasks)
   decorate()
 }
@@ -222,15 +234,10 @@ function applySelection(): void {
 }
 
 /**
- * Keep every label inside its bar, cut short with "…" where it does not fit,
- * and give every bar a native tooltip with the full name, plus any warnings.
- * An SVG `<title>` child is the tooltip mechanism inside an SVG; there is no
- * popup to hang it off, since popups are disabled so that a click selects the
- * task for the detail panel.
- *
- * Runs straight after frappe draws, before its own `requestAnimationFrame`
- * placement: that sees a label that fits and centres it in the bar, rather
- * than moving an over-long one out past the bar's end.
+ * Give every bar its full name as its label, and a native tooltip with the
+ * name plus any warnings. An SVG `<title>` child is the tooltip mechanism
+ * inside an SVG; there is no popup to hang it off, since popups are disabled
+ * so that a click selects the task for the detail panel.
  */
 function applyLabels(): void {
   const el = container.value
@@ -247,17 +254,34 @@ function applyLabels(): void {
     if (!existing) group.prepend(title)
 
     const label = group.querySelector<SVGTextElement>('.bar-label')
+    if (!label) continue
     // A diamond's name is drawn beside it by `applyMilestones`.
-    if (label && task.marker) {
-      label.textContent = ''
-      continue
-    }
-    const width = Number(group.querySelector('.bar')?.getAttribute('width'))
-    if (!label || !Number.isFinite(width)) continue
-    label.textContent = fitLabel(name, width - 2 * LABEL_INSET, (candidate) => {
-      label.textContent = candidate
-      return label.getComputedTextLength()
-    })
+    label.textContent = task.marker ? '' : name
+  }
+  placeLabels()
+  // frappe places labels itself on the next frame, by a rule that ignores the
+  // inset; this frame is queued after its own, so the rule here has the last word.
+  requestAnimationFrame(placeLabels)
+}
+
+/**
+ * Centre each label in its bar, or spill it past the bar's end where it does
+ * not fit (`placeLabel`). frappe's `big` class styles a spilled label as text
+ * on the grid rather than on the bar.
+ */
+function placeLabels(): void {
+  const el = container.value
+  if (!el) return
+
+  for (const task of props.tasks) {
+    if (task.marker) continue
+    const group = el.querySelector(`.bar-wrapper[data-id="${CSS.escape(task.id)}"]`)
+    const label = group?.querySelector<SVGTextElement>('.bar-label')
+    const bar = barBox(group ?? null)
+    if (!label || !bar) continue
+    const { x, spills } = placeLabel(bar, label.getComputedTextLength())
+    label.classList.toggle('big', spills)
+    label.setAttribute('x', String(x))
   }
 }
 
@@ -289,7 +313,7 @@ onBeforeUnmount(destroy)
     </p>
     <!-- No overflow here: the library's own .gantt-container scrolls both ways,
          which is what keeps its date header sticky. -->
-    <div v-show="tasks.length > 0" ref="container" class="gh-gantt-chart" />
+    <div v-show="tasks.length > 0" ref="container" class="gh-gantt-chart h-full" />
   </div>
 </template>
 
@@ -306,11 +330,26 @@ onBeforeUnmount(destroy)
 }
 
 /*
- * No height cap: the container is as tall as the chart and the page scrolls,
- * not a box inside it. The container still scrolls sideways. The cost is that
- * the date header, sticky only within the container, scrolls away with the
- * page on a long chart.
+ * The chart is the only thing that scrolls vertically: the container fills the
+ * box the board gives it (the window's remaining height) rather than being as
+ * tall as the chart, and scrolls inside it, so the date header stays pinned
+ * and the horizontal scrollbar stays in view. frappe sizes the container from
+ * `--gv-grid-height`; that is overridden here. Sized to the chart instead, a
+ * horizontal scrollbar left it a few pixels short, and the page and a sliver
+ * of the chart both scrolled.
  */
+.gh-gantt-chart .gantt-container {
+  height: 100%;
+  border: 1px solid #e5e7eb;
+}
+
+/*
+ * The Today button sits in the upper header. frappe pads it 10px down, which
+ * with the shorter header would push it over the day row.
+ */
+.gh-gantt-chart .gantt-container .side-header {
+  padding-top: 4px;
+}
 
 .gh-gantt-chart .bar-wrapper {
   cursor: pointer;
