@@ -177,6 +177,7 @@ function standIn(milestone: Milestone | MilestoneRef, date: Date, dependsOn: Tas
     canSetFields: false,
     warnings,
     milestone,
+    labels: [],
     isRelease: false,
     marker: { milestone, date, synthetic: true },
   }

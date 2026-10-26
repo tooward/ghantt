@@ -39,6 +39,7 @@ function task(id: TaskId, dependsOn: TaskId[] = []): Task {
     canSetFields: true,
     warnings: [],
     milestone: null,
+    labels: [],
     isRelease: false,
   }
 }
@@ -143,6 +144,26 @@ describe('board store', () => {
 
     expect(source.calls.map((call) => call.repo.issueType)).toEqual(['Feature', 'Feature'])
     expect(board.issueTypes).toEqual(['Task', 'Bug', 'Feature'])
+  })
+
+  it('filters the timeline by label without touching the graph, and resets on a new repository', async () => {
+    const board = useBoardStore()
+    const a = { ...task('a'), labels: ['bug'] }
+    const b = { ...task('b', ['a']), labels: ['UI'] }
+    board.useSource(new FakeSource([pageOf([a, b], null, 2)]))
+
+    await board.loadRepo('acme', 'widgets')
+    expect(board.labels).toEqual(['bug', 'UI'])
+
+    board.labelFilter = ['ui']
+    expect(board.timeline.map((t) => t.id)).toEqual(['b'])
+    expect(board.timeline[0].dependsOn).toEqual([])
+    // Hidden by choice, not missing: not reported as a dangling edge.
+    expect(board.graph.droppedEdges).toBe(0)
+    expect(board.graph.tasks).toHaveLength(2)
+
+    await board.loadRepo('acme', 'other')
+    expect(board.labelFilter).toEqual([])
   })
 
   it('treats a blank issue type as no filter', async () => {

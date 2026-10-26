@@ -41,6 +41,7 @@ const row: Task = {
   canSetFields: false,
   warnings: ['1 issue finishes after this milestone; the latest, #2, ends Tue 13 Oct 2026.'],
   milestone: v1,
+  labels: [],
   isRelease: false,
   marker: { milestone: v1, date: v1.dueOn!, synthetic: true },
 }

@@ -101,6 +101,8 @@ export interface Task {
   /** Non-fatal problems found while building this task, shown in the UI. */
   warnings: string[]
   milestone: MilestoneRef | null
+  /** Label names as GitHub spells them; the first 20, which is all the query asks for. */
+  labels: string[]
   /** Carries the release label: drawn as its milestone's diamond. */
   isRelease: boolean
   /** Only on rows built for the chart by `buildTimeline`; see `Marker`. */

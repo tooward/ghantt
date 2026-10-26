@@ -7,6 +7,7 @@ No backend, no database, no server process. It is a static page that reads issue
 ## What it does
 
 - Charts the open issues of one repository, one bar per issue — by default only issues of type **Feature**. The repository and type are chosen from the button in the toolbar under the header, which slides down Owner, Repository and Type fields; clear Type to chart every type. It suggests the repository's own issue types.
+- Filters the bars by GitHub label from **Labels** in the toolbar: tick one or more and only issues carrying any of them are shown. It works on the issues already loaded, so it makes no requests, and resets when another repository is loaded. Release issues always stay, as they are their milestone's diamond, and arrows to hidden issues are left out.
 - Draws `blocked by` relationships as arrows, so the order of work is visible.
 - Resolves start and due dates from issue date fields or from the milestone — see [Where the dates come from](#where-the-dates-come-from).
 - Edits an issue's Start and End dates, and what it is blocked by and what it blocks, from the detail panel, saving straight to GitHub.

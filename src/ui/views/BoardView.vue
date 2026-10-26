@@ -68,6 +68,9 @@ const unknownType = computed(() => {
 
 const isFirstLoad = computed(() => board.loading && board.tasks.length === 0)
 
+/** Loaded issues the label filter hides; zero when there is no filter. */
+const hiddenByLabel = computed(() => board.graph.tasks.length - board.visibleTasks.length)
+
 </script>
 
 <template>
@@ -87,6 +90,12 @@ const isFirstLoad = computed(() => board.loading && board.tasks.length === 0)
         :broken-cycles="board.graph.brokenCycles"
         :warned-tasks="warnedTasks"
       />
+
+      <p v-if="hiddenByLabel > 0" class="mt-3 text-sm text-gray-600" role="status">
+        Showing {{ board.visibleTasks.length }} of {{ board.graph.tasks.length }} loaded {{ issueNoun }}:
+        only those labelled {{ board.labelFilter.join(' or ') }}.
+        <button type="button" class="underline" @click="board.labelFilter = []">Show all</button>
+      </p>
 
       <div class="relative mt-3">
         <GanttChart
