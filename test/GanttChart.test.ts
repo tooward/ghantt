@@ -18,6 +18,7 @@
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Task, TaskId } from '../src/domain/Task'
+import { LABEL_INSET } from '../src/ui/components/barLabels'
 import GanttChart from '../src/ui/components/GanttChart.vue'
 
 function task(id: TaskId, dependsOn: TaskId[] = []): Task {
@@ -55,17 +56,17 @@ describe('GanttChart', () => {
     expect(wrapper.element.querySelectorAll('.bar-wrapper')).toHaveLength(2)
   })
 
-  it('draws blank rows beneath the last bar, and keeps them as tasks are added', async () => {
-    // frappe's row loop also draws a sliver of one more row; three whole ones are the point.
+  it('draws a blank row beneath the last bar, and keeps it as tasks are added', async () => {
+    // frappe's row loop may also draw a sliver of one more row; one whole one is the point.
     const rows = (wrapper: Awaited<ReturnType<typeof mountChart>>) =>
       wrapper.element.querySelectorAll('.grid-row').length
 
     const wrapper = await mountChart([task('a'), task('b')])
-    expect(rows(wrapper)).toBeGreaterThanOrEqual(2 + 3)
+    expect(rows(wrapper)).toBeGreaterThanOrEqual(2 + 1)
 
     await wrapper.setProps({ tasks: [task('a'), task('b'), task('c'), task('d')] })
-    expect(rows(wrapper)).toBeGreaterThanOrEqual(4 + 3)
-    expect(rows(wrapper)).toBeLessThanOrEqual(4 + 4)
+    expect(rows(wrapper)).toBeGreaterThanOrEqual(4 + 1)
+    expect(rows(wrapper)).toBeLessThanOrEqual(4 + 2)
   })
 
   describe('milestones', () => {
@@ -126,31 +127,34 @@ describe('GanttChart', () => {
     })
 
     const labelOf = (wrapper: Awaited<ReturnType<typeof mountChart>>, id: string) =>
-      wrapper.element.querySelector(`.bar-wrapper[data-id="${id}"] .bar-label`)!.textContent
+      wrapper.element.querySelector(`.bar-wrapper[data-id="${id}"] .bar-label`)!
     const tooltipOf = (wrapper: Awaited<ReturnType<typeof mountChart>>, id: string) =>
       wrapper.element.querySelector(`.bar-wrapper[data-id="${id}"] > title`)?.textContent
+    const barEnd = (wrapper: Awaited<ReturnType<typeof mountChart>>, id: string) => {
+      const bar = wrapper.element.querySelector(`.bar-wrapper[data-id="${id}"] .bar`)!
+      return Number(bar.getAttribute('x')) + Number(bar.getAttribute('width'))
+    }
 
-    it('cuts a label that is wider than its bar, and puts the full name in the tooltip', async () => {
-      // Far wider than any bar, so every label must be cut.
-      proto.getComputedTextLength = function (this: SVGElement) {
-        return (this.textContent ?? '').length * 1000
-      }
+    // Where a label goes is `placeLabel`'s job (barLabels.test.ts); these check it is applied.
+    it('spills a label wider than its bar out past the bar’s end, in full', async () => {
+      proto.getComputedTextLength = () => 10_000
       const wrapper = await mountChart([{ ...task('a'), title: 'A rather long issue title' }])
+      const label = labelOf(wrapper, 'a')
 
-      expect(labelOf(wrapper, 'a')).toBe('')
+      expect(label.textContent).toBe('#1 A rather long issue title')
+      expect(label.classList.contains('big')).toBe(true)
+      expect(Number(label.getAttribute('x'))).toBeCloseTo(barEnd(wrapper, 'a') + LABEL_INSET)
       expect(tooltipOf(wrapper, 'a')).toBe('#1 A rather long issue title')
     })
 
-    it('ends a cut label in an ellipsis inside the bar', async () => {
-      proto.getComputedTextLength = function (this: SVGElement) {
-        return (this.textContent ?? '').length * 7
-      }
-      const wrapper = await mountChart([{ ...task('a'), title: 'A rather long issue title that will not fit in a week' }])
-      const width = Number(wrapper.element.querySelector('.bar-wrapper[data-id="a"] .bar')!.getAttribute('width'))
+    it('keeps a label that fits inside its bar', async () => {
+      proto.getComputedTextLength = () => 10
+      const wrapper = await mountChart([task('a')])
+      const label = labelOf(wrapper, 'a')
 
-      const label = labelOf(wrapper, 'a')!
-      expect(label.endsWith('…')).toBe(true)
-      expect(label.length * 7).toBeLessThanOrEqual(width)
+      expect(label.textContent).toBe('#1 Issue a')
+      expect(label.classList.contains('big')).toBe(false)
+      expect(Number(label.getAttribute('x'))).toBeLessThan(barEnd(wrapper, 'a'))
     })
 
     it('adds warnings to the tooltip after the name', async () => {

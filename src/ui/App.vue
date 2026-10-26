@@ -55,7 +55,10 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="min-h-screen bg-white text-gray-900">
+  <!-- Exactly the window's height: the chart fills what is left below the
+       header and toolbar and scrolls inside itself, so the page never scrolls
+       as well. Anything else too tall for the window scrolls within main. -->
+  <div class="flex h-dvh flex-col bg-white text-gray-900">
     <header class="border-b border-gray-200">
       <div class="flex items-center justify-between px-6 py-4">
         <h1 class="flex items-center gap-2 text-lg font-semibold">
@@ -116,7 +119,7 @@ onMounted(() => {
 
     <BoardToolbar v-if="auth.isConnected" />
 
-    <main class="px-6 pb-10 pt-6">
+    <main class="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-3 pt-3">
       <!-- "Remember" was asked for and could not be done (or not yet); say so
            where it will actually be read, which is after the view has switched. -->
       <p
