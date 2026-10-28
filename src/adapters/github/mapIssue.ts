@@ -80,8 +80,13 @@ export function mapIssue(node: GitHubIssueNode, cfg: MapConfig): Task {
     canSetFields: node.viewerCanSetFields === true,
     warnings,
     milestone: milestoneRef(node),
+    labels: labelNames(node),
     isRelease: hasLabel(node, cfg.releaseLabel),
   }
+}
+
+function labelNames(node: GitHubIssueNode): string[] {
+  return (node.labels?.nodes ?? []).flatMap((label) => (label?.name ? [label.name] : []))
 }
 
 function milestoneRef(node: GitHubIssueNode): MilestoneRef | null {

@@ -39,6 +39,7 @@ function task(id: TaskId, dependsOn: TaskId[] = [], warnings: string[] = []): Ta
     canSetFields: true,
     warnings,
     milestone: null,
+    labels: [],
     isRelease: false,
   }
 }

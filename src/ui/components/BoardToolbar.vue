@@ -18,6 +18,7 @@
 import { computed, nextTick, onMounted, ref, useTemplateRef } from 'vue'
 import { useBoardStore } from '../../app/stores/board'
 import { useSettingsStore } from '../../app/stores/settings'
+import LabelFilter from './LabelFilter.vue'
 import RepoHelp from './RepoHelp.vue'
 
 /**
@@ -121,6 +122,7 @@ onMounted(() => {
       <span v-if="board.loading" class="text-sm text-gray-500" aria-live="polite">Loading…</span>
 
       <div class="ml-auto flex items-center gap-2">
+        <LabelFilter v-if="board.repo" class="mr-2" />
         <label for="view-mode" class="text-sm text-gray-600">Scale</label>
         <select
           id="view-mode"

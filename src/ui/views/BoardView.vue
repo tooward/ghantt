@@ -68,10 +68,15 @@ const unknownType = computed(() => {
 
 const isFirstLoad = computed(() => board.loading && board.tasks.length === 0)
 
+/** Loaded issues the label filter hides; zero when there is no filter. */
+const hiddenByLabel = computed(() => board.graph.tasks.length - board.visibleTasks.length)
+
 </script>
 
 <template>
-  <section>
+  <!-- A column filling main: the chart takes whatever height the notices above
+       and the Load more button below leave over. -->
+  <section class="flex min-h-0 flex-1 flex-col">
     <!-- Owner, Repository and Type live in the toolbar under the header. -->
     <p v-if="!board.repo && !board.loading && !board.error" class="text-sm text-gray-600">
       Choose a repository from the toolbar above to chart its issues.
@@ -81,32 +86,41 @@ const isFirstLoad = computed(() => board.loading && board.tasks.length === 0)
 
     <ChartSkeleton v-if="isFirstLoad" />
 
-    <div v-else-if="board.tasks.length" class="mt-6">
+    <div v-else-if="board.tasks.length" class="flex min-h-0 flex-1 flex-col">
       <GraphNotice
         :dropped-edges="board.graph.droppedEdges"
         :broken-cycles="board.graph.brokenCycles"
         :warned-tasks="warnedTasks"
       />
 
-      <div class="relative mt-3">
+      <p v-if="hiddenByLabel > 0" class="mb-2 text-sm text-gray-600" role="status">
+        Showing {{ board.visibleTasks.length }} of {{ board.graph.tasks.length }} loaded {{ issueNoun }}:
+        only those labelled {{ board.labelFilter.join(' or ') }}.
+        <button type="button" class="underline" @click="board.labelFilter = []">Show all</button>
+      </p>
+
+      <!-- The only vertical scroll: the chart scrolls inside this box, which
+           fills the window's remaining height. A floor, so a very short window
+           still shows a few rows (main scrolls instead). -->
+      <div class="relative min-h-48 flex-1">
         <GanttChart
+          class="h-full"
           :tasks="board.timeline"
           :view-mode="settings.viewMode"
           :selected-id="selectedId"
           @select="selectedId = $event"
         />
-        <!-- Outside the chart's scroll container so it stays put. The column
-             runs the chart's full height, below the date header, and the panel
-             sticks to the top of the window inside it, so it opens in view
-             however far down the page the clicked bar is. Only the panel
-             takes clicks; the rest of the column lets them through to the chart.
-             A panel taller than the window scrolls on its own. -->
-        <div class="pointer-events-none absolute inset-x-3 bottom-0 top-24 z-10 flex items-start justify-end">
+        <!-- Outside the chart's scroll container so it stays put while the
+             chart scrolls under it. The column sits below the date header and
+             clear of both scrollbars. Only the panel takes clicks; the rest of
+             the column lets them through to the chart. A panel taller than the
+             chart scrolls on its own. -->
+        <div class="pointer-events-none absolute bottom-6 left-3 right-6 top-20 z-10 flex items-start justify-end">
           <!-- Keyed by task, so choosing another bar starts a fresh form. -->
           <TaskDetail
             v-if="selectedTask"
             :key="selectedTask.id"
-            class="pointer-events-auto sticky top-3 max-h-[calc(100vh-1.5rem)] overflow-y-auto"
+            class="pointer-events-auto max-h-full overflow-y-auto"
             :task="selectedTask"
             :tasks="board.tasks"
             :editability="board.fieldEditability"
@@ -120,7 +134,7 @@ const isFirstLoad = computed(() => board.loading && board.tasks.length === 0)
           <MilestoneDetail
             v-else-if="selectedMilestone"
             :key="selectedMilestone.id"
-            class="pointer-events-auto sticky top-3 max-h-[calc(100vh-1.5rem)] overflow-y-auto"
+            class="pointer-events-auto max-h-full overflow-y-auto"
             :row="selectedMilestone"
             @close="selectedId = null"
           />
@@ -131,7 +145,7 @@ const isFirstLoad = computed(() => board.loading && board.tasks.length === 0)
         v-if="board.hasNextPage"
         type="button"
         :disabled="board.loading"
-        class="mt-4 rounded border border-gray-300 px-4 py-2 disabled:opacity-50"
+        class="mt-3 self-start rounded border border-gray-300 px-4 py-2 disabled:opacity-50"
         @click="board.loadMore()"
       >
         {{ board.loading ? 'Loading…' : `Load more (${board.totalCount - board.tasks.length} remaining)` }}

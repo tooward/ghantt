@@ -48,6 +48,7 @@ function task(id: TaskId, start: number, due: number, extra: Partial<Task> = {})
     canSetFields: true,
     warnings: [],
     milestone: null,
+    labels: [],
     isRelease: false,
     ...extra,
   }
