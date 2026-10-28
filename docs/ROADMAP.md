@@ -4,7 +4,7 @@ What is planned, in rough order, and what has shipped. Decisions and the
 schema facts behind them are in [ARCHITECTURE.md](ARCHITECTURE.md); the
 original phased build is in [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
 
-Last updated 2026-09-24.
+Last updated 2026-10-28. Current status and open items: [CLAUDE.md](../CLAUDE.md).
 
 ---
 
