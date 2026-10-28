@@ -68,9 +68,13 @@ Read before changing things:
 - A remembered token belongs to one address. Users should only ever use
   `https://ghantt.app`.
 
-## Status — 2026-10-05
+## Status — 2026-10-28
 
-All work is merged to `main` (PRs #1–#4) and deployed to ghantt.app.
+All work is merged to `main` (PRs #1–#7) and deployed to ghantt.app.
+
+Latest: a label filter in the toolbar (#6); the app now fills exactly the
+window height and the chart scrolls inside itself, and a title too long for
+its bar is written just past the bar's end instead of being cut short (#7).
 
 Shipped recently: the Days field and keeping dates and Days in step;
 milestones as diamonds with `release`-labelled release issues; refresh
@@ -112,8 +116,6 @@ round `?` in the toolbar; Cloudflare security headers.
 - Hide stand-in diamonds (milestones with no release issue), and warn on a
   release issue that is in no milestone — avoids the duplicate-diamond
   confusion above.
-- A floating date header, since the chart now scrolls with the page and its
-  header scrolls away.
 - Extend the "starts before its blocker ends" warning from releases to every
   blocked-by link.
 - Assign milestones and create release issues from the detail panel.
